@@ -20,10 +20,13 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
-        <!--httpClient的依赖 -->
+        <!-- Feign 的 HTTP 连接池实现。
+             Spring Cloud OpenFeign 4.x 只认 feign-hc5（HttpClient 5），
+             旧的 feign-httpclient（HttpClient 4）已经没有自动配置接管了，
+             留着只会白带一个 httpclient 4.5.x 进来。 -->
         <dependency>
             <groupId>io.github.openfeign</groupId>
-            <artifactId>feign-httpclient</artifactId>
+            <artifactId>feign-hc5</artifactId>
         </dependency>
         <!--common-->
         <dependency>
