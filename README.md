@@ -10,24 +10,24 @@
 
 | 分类 | 选型 | 版本 |
 |---|---|---|
-| 语言 / 运行时 | Java | 11 |
-| 基础框架 | Spring Boot | 2.7.2 |
-| 微服务 | Spring Cloud | 2021.0.3 |
-| 微服务（阿里系） | Spring Cloud Alibaba | 2021.0.1.0 |
-| 注册 / 配置中心 | Nacos | 2.1.0 |
+| 语言 / 运行时 | Java | 17 |
+| 基础框架 | Spring Boot | 3.5.15 |
+| 微服务 | Spring Cloud | 2025.0.1 |
+| 微服务（阿里系） | Spring Cloud Alibaba | 2025.0.0.0 |
+| 注册 / 配置中心 | Nacos | 3.0.3 |
 | 网关 | Spring Cloud Gateway | — |
 | 服务调用 | OpenFeign + LoadBalancer | — |
-| 持久层 | MyBatis-Plus | 3.5.5 |
+| 持久层 | MyBatis-Plus | 3.5.7 |
 | 数据库 | MySQL | 8.0 |
-| 缓存 / 分布式锁 | Redis + Redisson | 3.13.6 |
+| 缓存 / 分布式锁 | Redis + Redisson | 4.7.0 |
 | 消息队列 | RabbitMQ | 3.8 |
-| 分布式事务 | Seata（AT 模式） | 1.5.1 |
-| 搜索引擎 | Elasticsearch | 7.12.1 |
+| 分布式事务 | Seata（AT 模式） | 2.5.0 |
+| 搜索引擎 | Elasticsearch | 7.17.28（客户端） |
 | 文档数据库 | MongoDB | — |
-| 定时任务 | XXL-JOB | 2.3.0 |
-| 流控降级 | Sentinel | — |
-| 接口文档 | Knife4j / Swagger | 3.0.3 |
-| 工具库 | Hutool | 5.7.17 |
+| 定时任务 | XXL-JOB | 2.4.2 |
+| 流控降级 | Sentinel | 1.8.9 |
+| 接口文档 | springdoc + Knife4j | 2.8 / 4.5.0 |
+| 工具库 | Hutool | 5.8.47 |
 
 #### 模块划分
 
@@ -63,6 +63,12 @@
 - `autoconfigure/metrics` / `alert` —— 指标采集与告警
 
 #### 本地启动
+
+##### 0. 环境要求
+
+- **JDK 17**（Boot 3.x 的最低基线，Java 11 起不适用）
+- Maven 3.8+
+- 中间件版本要和客户端对齐：**Nacos 3.0.3**、RabbitMQ 3.8+、Elasticsearch 7.x、MySQL 8.0
 
 ##### 1. 启动中间件
 
@@ -226,5 +232,6 @@ zhiwei-server/
 #### 说明
 
 - 所有敏感凭据（数据库密码、MQ 密码、密钥库口令、第三方 AppSecret）**不写入代码仓库**，
-  统一放在 Nacos 配置中心；仓库里的 `bootstrap.yml` 只保留空值和占位。
+  统一放在 Nacos 配置中心；仓库里的 `application.yml` 只保留占位，真正的连接信息靠
+  `spring.config.import` 从 Nacos 拉取。
 - `.gitignore` 已排除 `target/`、`logs/`、`*.jks`、`*.p12`、`.idea/`、`.vscode/`。
