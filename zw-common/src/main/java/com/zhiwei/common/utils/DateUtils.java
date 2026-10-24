@@ -127,7 +127,10 @@ public class DateUtils extends LocalDateTimeUtil {
     }
 
     public static LocalDateTime getWeekEndTime(LocalDate now) {
-        return LocalDateTime.of(now.plusDays(8 - now.getDayOfWeek().getValue()), LocalTime.MAX);
+        // 与 getWeekBeginTime 配对：本周一 00:00 ~ 本周日 23:59:59.999999999。
+        // DayOfWeek.getValue() 周一=1 … 周日=7，所以「距本周日还有几天」是 7 - value。
+        // 写成 8 - value 会多算一天，落到下周一，导致下周一的数据被算进本周。
+        return LocalDateTime.of(now.plusDays(7 - now.getDayOfWeek().getValue()), LocalTime.MAX);
     }
 
     /**
