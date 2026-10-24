@@ -8,12 +8,12 @@ import com.zhiwei.learning.domian.query.QuestionAdminPageQuery;
 import com.zhiwei.learning.domian.vo.QuestionAdminVO;
 
 import com.zhiwei.learning.service.IInteractionQuestionService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 /**
  * <p>
@@ -26,23 +26,23 @@ import javax.validation.Valid;
 @RestController
 @RequestMapping("/admin/questions")
 @RequiredArgsConstructor
-@Api(tags = "互动问题")
+@Tag(name = "互动问题")
 public class InteractionQuestionAdminController {
     private final IInteractionQuestionService interactionQuestionService;
 
-    @ApiOperation("管理端分页查询互动问题")
+    @Operation(summary = "管理端分页查询互动问题")
     @GetMapping("/page")
     public PageDTO<QuestionAdminVO> queryQuestionPageAdmin(QuestionAdminPageQuery query) {
         return interactionQuestionService.queryQuestionPageAdmin(query);
     }
 
-    @ApiOperation("管理端修改问题隐藏状态")
+    @Operation(summary = "管理端修改问题隐藏状态")
     @PutMapping("/{id}/hidden/{hidden}")
     public void updateQuestionHidden(@PathVariable Long id, @PathVariable Boolean hidden) {
         interactionQuestionService.updateQuestionHidden(id, hidden);
     }
 
-    @ApiOperation("管理端查询问题详情")
+    @Operation(summary = "管理端查询问题详情")
     @GetMapping("/{id}")
     public QuestionAdminVO queryQuestionById(@PathVariable Long id) {
         return interactionQuestionService.adminQueryQuestionById(id);

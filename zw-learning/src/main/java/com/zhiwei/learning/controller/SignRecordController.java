@@ -4,8 +4,8 @@ package com.zhiwei.learning.controller;
 import com.zhiwei.learning.domian.vo.PointsStatisticsVO;
 import com.zhiwei.learning.domian.vo.SignResultVO;
 import com.zhiwei.learning.service.ISignRecordService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,7 +22,7 @@ import java.util.List;
  * @author author
  * @since 2026-05-19
  */
-@Api(tags = "签到记录的相关接口")
+@Tag(name = "签到记录的相关接口")
 @RestController
 @RequestMapping("/sign-records")
 @RequiredArgsConstructor
@@ -30,7 +30,7 @@ public class SignRecordController {
     private final ISignRecordService signRecordService;
 
 
-    @ApiOperation("签到功能")
+    @Operation(summary = "签到功能")
     @PostMapping
     public SignResultVO addSignRecord() {
         return signRecordService.addSignRecord();
@@ -38,7 +38,7 @@ public class SignRecordController {
 
 
     @GetMapping
-    @ApiOperation("查询签到记录")
+    @Operation(summary = "查询签到记录")
     public List<Integer> querySignRecord() {
         return signRecordService.querySignRecord();
     }

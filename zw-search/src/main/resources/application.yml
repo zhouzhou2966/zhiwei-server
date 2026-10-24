@@ -1,0 +1,43 @@
+server:
+  port: 8083  #端口
+  tomcat:
+    uri-encoding: UTF-8   #服务编码
+spring:
+  profiles:
+    active: dev
+  application:
+    name: search-service
+  cloud:
+    nacos:
+      # 导入配置时必须先能拿到注册中心地址，所以从 application-{profile}.yml 提到这里。
+      # 原来放在 bootstrap-{profile}.yml 里，现在那份只剩 discovery 了。
+      server-addr: 192.168.150.101:8848
+    config:
+      # shared-configs 从 SCA 2023.0.1.3 起已废弃（issue #3998），统一改用 spring.config.import。
+      # 顺序即优先级：越靠后越高，所以服务专属配置放最后，与原来的语义一致。
+      import:
+        - nacos:shared-spring.yaml
+        - nacos:shared-redis.yaml
+        - nacos:shared-mybatis.yaml
+        - nacos:shared-logs.yaml
+        - nacos:shared-feign.yaml
+        - nacos:shared-mq.yaml
+        - nacos:search-service.yaml
+zw:
+  swagger:
+    enable: true
+    package-path: com.zhiwei.search.controller
+    title: 知微 - 搜索系统接口文档
+    description: 该服务包含课程搜索、兴趣推荐等相关功能
+    contact-name: 知微
+    version: v1.0
+    enableResponseWrap: true
+  auth:
+    resource:
+      enable: true
+      includeLoginPaths:
+        - /interests/**
+        - /courses/admin
+  jdbc:
+    database: zw_search
+

@@ -1,7 +1,6 @@
 package com.zhiwei.trade.domain.vo;
 
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,15 +12,15 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ApiModel(description = "下单响应信息")
+@Schema(description = "下单响应信息")
 public class PlaceOrderResultVO {
-    @ApiModelProperty("订单号")
+    @Schema(description = "订单号")
     private Long orderId;
-    @ApiModelProperty("支付金额")
+    @Schema(description = "支付金额")
     private Integer payAmount;
-    @ApiModelProperty("待支付的订单，超时时间")
+    @Schema(description = "待支付的订单，超时时间")
     private LocalDateTime payOutTime;
-    @ApiModelProperty("订单状态，1：待支付，2：已支付，3：已关闭，4：已完成，5：已报名, 6:申请退款")
+    @Schema(description = "订单状态，1：待支付，2：已支付，3：已关闭，4：已完成，5：已报名, 6:申请退款")
     private Integer status;
 }
 

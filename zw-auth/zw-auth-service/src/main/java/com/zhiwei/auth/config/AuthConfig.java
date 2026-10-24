@@ -1,10 +1,8 @@
 package com.zhiwei.auth.config;
 
-import org.apache.tomcat.util.http.LegacyCookieProcessor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.web.embedded.tomcat.TomcatContextCustomizer;
 import org.springframework.cloud.bootstrap.encrypt.KeyProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -65,8 +63,9 @@ public class AuthConfig {
                 keyProperties.getKeyStore().getSecret().toCharArray());
     }
 
-    @Bean
-    public TomcatContextCustomizer cookieTomcatContextCustomizer(){
-        return context -> context.setCookieProcessor(new LegacyCookieProcessor());
-    }
+    // 原来这里注册了一个 TomcatContextCustomizer，把 CookieProcessor 换成
+    // org.apache.tomcat.util.http.LegacyCookieProcessor。Tomcat 10.1 已经删掉这个类
+    // （只保留 Rfc6265CookieProcessor），而 Boot 3.5 内嵌的正是 Tomcat 10.1，所以这个 bean 无法保留。
+    // 对当前代码没有影响：唯一写 Cookie 的地方是 CookieBuilder，它写入前先做 URLEncoder 编码，
+    // 本来就不依赖 LegacyCookieProcessor 放宽的字符集。默认的 Rfc6265CookieProcessor 足够。
 }

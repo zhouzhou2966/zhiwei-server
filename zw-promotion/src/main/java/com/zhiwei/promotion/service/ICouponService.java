@@ -10,7 +10,7 @@ import com.zhiwei.promotion.domian.vo.CouponDetailVO;
 import com.zhiwei.promotion.domian.vo.CouponPageVO;
 import com.zhiwei.promotion.domian.vo.CouponVO;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.List;
 
 /**

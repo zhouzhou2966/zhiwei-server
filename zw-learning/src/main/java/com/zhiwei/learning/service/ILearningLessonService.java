@@ -9,7 +9,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.zhiwei.learning.domian.vo.LearningLessonVO;
 import com.zhiwei.learning.domian.vo.LearningPlanPageVO;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.List;
 
 /**

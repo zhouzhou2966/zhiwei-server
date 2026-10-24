@@ -39,7 +39,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.validation.ValidatorFactory;
+import jakarta.validation.ValidatorFactory;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;

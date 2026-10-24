@@ -1,7 +1,7 @@
 package com.zhiwei.common.autoconfigure.idempotent.token;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>该接口随 zw-common 自动装配到每个 Web 服务，网关按服务前缀路由即可访问，
  * 例如 {@code GET /prs/idempotent/token}。
  **/
-@Api(tags = "幂等令牌接口")
+@Tag(name = "幂等令牌接口")
 @RestController
 @RequestMapping("/idempotent")
 public class IdempotentTokenController {
@@ -24,7 +24,7 @@ public class IdempotentTokenController {
         this.tokenService = tokenService;
     }
 
-    @ApiOperation("申请一次性幂等令牌")
+    @Operation(summary = "申请一次性幂等令牌")
     @GetMapping("/token")
     public String issueToken() {
         return tokenService.issue();

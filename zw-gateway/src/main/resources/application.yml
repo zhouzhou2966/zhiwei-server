@@ -1,0 +1,36 @@
+server:
+  port: 10010
+  tomcat:
+    uri-encoding: UTF-8
+spring:
+  profiles:
+    active: dev
+  application:
+    name: gateway-service
+  cloud:
+    nacos:
+      # 导入配置时必须先能拿到注册中心地址，所以从 application-{profile}.yml 提到这里。
+      # 原来放在 bootstrap-{profile}.yml 里，现在那份只剩 discovery 了。
+      server-addr: 192.168.150.101:8848
+    config:
+      # shared-configs 从 SCA 2023.0.1.3 起已废弃（issue #3998），统一改用 spring.config.import。
+      # 顺序即优先级：越靠后越高，所以服务专属配置放最后，与原来的语义一致。
+      import:
+        - nacos:shared-spring.yaml
+        - nacos:shared-redis.yaml
+        - nacos:shared-logs.yaml
+        - nacos:gateway-service.yaml
+logging:
+  level:
+    com.zhiwei: debug
+
+# 网关限流：Redis 令牌桶
+# replenish-rate 是稳态 QPS 上限，burst-capacity 是允许的突发量。
+# 两者取值要留余量：实测峰值 QPS 的 1.5~2 倍，否则正常用户会被误伤。
+zw:
+  rate-limit:
+    enabled: true
+    replenish-rate: 50
+    burst-capacity: 100
+    requested-tokens: 1
+    message: 请求过于频繁，请稍后再试

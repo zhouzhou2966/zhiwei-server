@@ -9,8 +9,8 @@ import com.zhiwei.learning.domian.vo.NoteAdminDetailVO;
 import com.zhiwei.learning.domian.vo.NoteAdminPageVO;
 
 import com.zhiwei.learning.service.ILearningNoteService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,25 +27,25 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/admin/notes")
 @RequiredArgsConstructor
-@Api(tags = "管理员端学习笔记管理")
+@Tag(name = "管理员端学习笔记管理")
 public class LearningNoteAdminController {
 
     private final ILearningNoteService learningNoteService;
 
 
-    @ApiOperation("管理员端分页查询笔记")
+    @Operation(summary = "管理员端分页查询笔记")
     @GetMapping("/page")
     public PageDTO<NoteAdminPageVO> pageAdminPageQuery(NoteAdminPageQuery notePageQuery) {
         return learningNoteService.pageAdminPageQuery(notePageQuery);
     }
 
-    @ApiOperation("管理员端查询笔记详情")
+    @Operation(summary = "管理员端查询笔记详情")
     @GetMapping("/{id}")
     public NoteAdminDetailVO getNoteAdminDetail(@PathVariable Long id) {
         return learningNoteService.getNoteAdminDetail(id);
     }
 
-    @ApiOperation("管理员端更新笔记隐藏状态")
+    @Operation(summary = "管理员端更新笔记隐藏状态")
     @PutMapping("/{id}/hidden/{hidden}")
     public void updateNoteHiddenStatus(@PathVariable Long id, @PathVariable Boolean hidden) {
         learningNoteService.updateNoteHiddenStatus(id, hidden);

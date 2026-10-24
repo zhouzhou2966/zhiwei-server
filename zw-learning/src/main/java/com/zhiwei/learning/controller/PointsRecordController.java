@@ -3,8 +3,8 @@ package com.zhiwei.learning.controller;
 
 import com.zhiwei.learning.domian.vo.PointsStatisticsVO;
 import com.zhiwei.learning.service.IPointsRecordService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,11 +24,11 @@ import java.util.List;
 @RestController
 @RequestMapping("/points")
 @RequiredArgsConstructor
-@Api(tags = "学习积分记录接口")
+@Tag(name = "学习积分记录接口")
 public class PointsRecordController {
     private final IPointsRecordService pointsRecordService;
 
-    @ApiOperation("查询今日积分")
+    @Operation(summary = "查询今日积分")
     @GetMapping("/today")
     public List<PointsStatisticsVO> queryTodayPoints() {
         return pointsRecordService.queryTodayPoints();

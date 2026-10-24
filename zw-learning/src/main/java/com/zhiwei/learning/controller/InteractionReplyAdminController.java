@@ -6,12 +6,12 @@ import com.zhiwei.learning.domian.dto.ReplyDTO;
 import com.zhiwei.learning.domian.query.ReplyPageQuery;
 import com.zhiwei.learning.domian.vo.ReplyVO;
 import com.zhiwei.learning.service.IInteractionReplyService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 /**
  * <p>
@@ -24,18 +24,18 @@ import javax.validation.Valid;
 @RestController
 @RequestMapping("/admin/replies")
 @RequiredArgsConstructor
-@Api(tags = "管理端互动回答或评论接口")
+@Tag(name = "管理端互动回答或评论接口")
 public class InteractionReplyAdminController {
     private final IInteractionReplyService replyService;
 
 
-    @ApiOperation("管理端分页查询互动回答或评论")
+    @Operation(summary = "管理端分页查询互动回答或评论")
     @GetMapping("/page")
     public PageDTO<ReplyVO> listReplies(ReplyPageQuery query) {
         return replyService.listRepliesAdmin(query);
     }
 
-    @ApiOperation("管理端修改互动回答或评论的隐藏状态")
+    @Operation(summary = "管理端修改互动回答或评论的隐藏状态")
     @PutMapping("/{id}/hidden/{hidden}")
     public void updateReplyHidden(@PathVariable Long id, @PathVariable Boolean hidden) {
         replyService.updateReplyHidden(id, hidden);

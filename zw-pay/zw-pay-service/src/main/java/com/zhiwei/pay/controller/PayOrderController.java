@@ -7,13 +7,13 @@ import com.zhiwei.pay.sdk.constants.PayType;
 import com.zhiwei.pay.sdk.dto.PayApplyDTO;
 import com.zhiwei.pay.sdk.dto.PayResultDTO;
 import com.zhiwei.pay.service.IPayOrderService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 /**
  * <p>
@@ -23,7 +23,7 @@ import javax.validation.Valid;
  * @author zhiwei
  * @since 2022-08-26
  */
-@Api(tags = "支付相关接口")
+@Tag(name = "支付相关接口")
 @RestController
 @RequestMapping("/pay-orders")
 @RequiredArgsConstructor
@@ -31,7 +31,7 @@ public class PayOrderController {
 
     private final IPayOrderService payOrderService;
 
-    @ApiOperation("扫码支付申请支付单，返回支付url地址，用于生产二维码")
+    @Operation(summary = "扫码支付申请支付单，返回支付url地址，用于生产二维码")
     @PostMapping
     public String applyPayOrder(@Valid @RequestBody PayApplyDTO payApplyDTO){
         if(!PayType.NATIVE.equalsValue(payApplyDTO.getPayType())){
@@ -40,10 +40,10 @@ public class PayOrderController {
         return payOrderService.applyPayOrder(payApplyDTO);
     }
 
-    @ApiOperation("根据业务端订单id查询支付结果")
+    @Operation(summary = "根据业务端订单id查询支付结果")
     @GetMapping("/{bizOrderId}/status")
     public PayResultDTO queryPayResult(
-            @ApiParam("业务订单id") @PathVariable("bizOrderId") Long bizOrderId
+            @Parameter(description = "业务订单id") @PathVariable("bizOrderId") Long bizOrderId
     ){
         return payOrderService.queryPayResult(bizOrderId);
     }
@@ -62,10 +62,10 @@ public class PayOrderController {
      * 覆盖本接口在内的所有非回调接口，所以这里不再单独校验密钥。
      * </p>
      */
-    @ApiOperation("关闭支付单（内部接口）")
+    @Operation(summary = "关闭支付单（内部接口）")
     @PostMapping("/{bizOrderNo}/close")
     public PayResultDTO closePayOrder(
-            @ApiParam("业务订单id") @PathVariable("bizOrderNo") Long bizOrderNo
+            @Parameter(description = "业务订单id") @PathVariable("bizOrderNo") Long bizOrderNo
     ){
         return payOrderService.closeByBizOrderNo(bizOrderNo);
     }

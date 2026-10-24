@@ -12,12 +12,12 @@ import com.zhiwei.promotion.domian.vo.CouponPageVO;
 import com.zhiwei.promotion.domian.vo.CouponVO;
 import com.zhiwei.promotion.service.ICouponService;
 import com.zhiwei.promotion.service.impl.CouponServiceImpl;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.List;
 
 /**
@@ -28,7 +28,7 @@ import java.util.List;
  * @author author
  * @since 2026-05-26
  */
-@Api(tags = "优惠券接口")
+@Tag(name = "优惠券接口")
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/coupons")
@@ -36,31 +36,31 @@ public class CouponController {
 
     private final ICouponService couponService;
 
-    @ApiOperation("保存优惠券")
+    @Operation(summary = "保存优惠券")
     @PostMapping
     public void saveCoupon(@RequestBody @Valid CouponFormDTO dto) {
         couponService.saveCoupon(dto);
     }
 
-    @ApiOperation("分页查询优惠券")
+    @Operation(summary = "分页查询优惠券")
     @GetMapping("/page")
     public PageDTO<CouponPageVO> queryCouponPage(CouponQuery query) {
         return couponService.queryCouponPage(query);
     }
 
-    @ApiOperation("发放优惠券")
+    @Operation(summary = "发放优惠券")
     @PutMapping("/{id}/issue")
     public void issueCoupon(@RequestBody @Valid CouponIssueFormDTO dto) {
         couponService.issueCoupon(dto);
     }
 
-    @ApiOperation("修改优惠券")
+    @Operation(summary = "修改优惠券")
     @PutMapping("/{id}")
     public void updateCoupon(@RequestBody @Valid CouponFormDTO dto) {
         couponService.updateCouponInfo(dto);
     }
 
-    @ApiOperation("查询优惠券详情")
+    @Operation(summary = "查询优惠券详情")
     @GetMapping("/{id}")
     public CouponDetailVO getCouponById(@PathVariable Long id) {
         return couponService.getCouponById(id);
@@ -72,14 +72,14 @@ public class CouponController {
         couponService.deleteCouponById(id);
     }
 
-    @ApiOperation("暂停优惠券")
+    @Operation(summary = "暂停优惠券")
     @PutMapping("/{id}/pause")
     public void pauseCoupon(@PathVariable Long id) {
         couponService.pauseCoupon(id);
     }
 
 
-    @ApiOperation("查询正在发放的优惠券")
+    @Operation(summary = "查询正在发放的优惠券")
     @GetMapping("/list")
     public List<CouponVO> queryIssuingCoupons() {
         return couponService.queryIssuingCoupons();

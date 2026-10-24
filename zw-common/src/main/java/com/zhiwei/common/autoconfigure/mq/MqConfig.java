@@ -168,7 +168,9 @@ public class MqConfig implements EnvironmentAware{
      */
     private boolean isDelayedMessage(ReturnedMessage returned) {
         MessageProperties props = returned.getMessage().getMessageProperties();
-        if (props.getReceivedDelay() != null) {
+        // Spring AMQP 3.x 把 getReceivedDelay()（Integer）换成了 getReceivedDelayLong()（Long），
+        // 判断语义不变：字段非空就说明这条消息带着 x-delay 被退回。
+        if (props.getReceivedDelayLong() != null) {
             return true;
         }
         if (props.getHeader(DelayedMessageProcessor.DELAYED_HEADER) != null) {

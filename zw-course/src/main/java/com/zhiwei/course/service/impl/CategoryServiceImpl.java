@@ -36,7 +36,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
@@ -391,7 +391,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> i
         queryWrapper.eq(Category::getLevel, 3)
                 .in(Category::getId, thirdCateIdList);
         Long thirdCateNum = baseMapper.selectCount(queryWrapper);
-        if (!NumberUtils.equals(thirdCateNum, thirdCateIdList.size())) {
+        if (!NumberUtils.equals(thirdCateNum.longValue(), (long) thirdCateIdList.size())) {
             throw new BizIllegalException(ErrorInfo.Msg.REQUEST_PARAM_ILLEGAL);
         }
         //2.查询所有分类，并将分类转化成map

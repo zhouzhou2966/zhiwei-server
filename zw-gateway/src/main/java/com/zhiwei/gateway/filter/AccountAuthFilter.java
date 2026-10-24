@@ -34,7 +34,7 @@ public class AccountAuthFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         // 1.获取请求request信息
         ServerHttpRequest request = exchange.getRequest();
-        String method = request.getMethodValue();
+        String method = request.getMethod().name();
         // ⚠️ 这里必须剥掉网关路由前缀再匹配。
         // 权限表（Redis auth:privileges）里存的是服务内部路径，形如 GET:/courses/page；
         // 而网关拿到的是带前缀的 GET:/cs/courses/page。不剥前缀时

@@ -12,8 +12,8 @@
     <artifactId>zw-auth-service</artifactId>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
     </properties>
     <dependencies>
         <dependency>
@@ -27,11 +27,11 @@
         </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-boot-starter</artifactId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         </dependency>
         <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
         </dependency>
         <!--Redis-->
         <dependency>
@@ -68,6 +68,14 @@
             <groupId>com.zhiwei</groupId>
             <artifactId>zw-auth-resource-sdk</artifactId>
             <version>1.0.0</version>
+        </dependency>
+        <!--JWT 签名：KeyStoreKeyFactory 在 spring-security-rsa 里。
+            以前是从 spring-cloud-starter-bootstrap 传递进来的，Boot 3 下这个 starter 不再引入，
+            而 AuthConfig 又依赖 KeyProperties（spring-cloud-context）和 KeyStoreKeyFactory，所以显式声明。
+            KeyProperties 由 nacos-config 传递的 spring-cloud-context 提供，不用单独加。-->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-rsa</artifactId>
         </dependency>
     </dependencies>
     <build>

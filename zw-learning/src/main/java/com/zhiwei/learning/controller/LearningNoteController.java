@@ -7,12 +7,12 @@ import com.zhiwei.learning.domian.dto.NoteUpdateDTO;
 import com.zhiwei.learning.domian.query.NotePageQuery;
 import com.zhiwei.learning.domian.vo.NotePageVO;
 import com.zhiwei.learning.service.ILearningNoteService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 /**
  * <p>
@@ -25,42 +25,42 @@ import javax.validation.Valid;
 @RestController
 @RequestMapping("/notes")
 @RequiredArgsConstructor
-@Api(tags = "学习笔记表")
+@Tag(name = "学习笔记表")
 public class LearningNoteController {
 
     private final ILearningNoteService learningNoteService;
 
-    @ApiOperation("保存笔记")
+    @Operation(summary = "保存笔记")
     @PostMapping
     public void saveNote(@Valid @RequestBody NoteFormDTO noteFormDTO) {
         learningNoteService.saveNote(noteFormDTO);
     }
 
-    @ApiOperation("采集笔记")
+    @Operation(summary = "采集笔记")
     @PostMapping("/gathers/{id}")
     public void gatherNotes(@PathVariable("id") Long id) {
         learningNoteService.gatherNotes(id);
     }
 
-    @ApiOperation("取消采集")
+    @Operation(summary = "取消采集")
     @DeleteMapping("/gathers/{id}")
     public void cancelGatherNotes(@PathVariable("id") Long id) {
         learningNoteService.cancelGatherNotes(id);
     }
 
-    @ApiOperation("更新笔记")
+    @Operation(summary = "更新笔记")
     @PutMapping("/{id}")
     public void updateNote(@PathVariable("id") Long id, @Valid @RequestBody NoteUpdateDTO noteUpdateDTO) {
         learningNoteService.updateNote(id, noteUpdateDTO);
     }
 
-    @ApiOperation("删除笔记")
+    @Operation(summary = "删除笔记")
     @DeleteMapping("/{id}")
     public void deleteNote(@PathVariable("id") Long id) {
         learningNoteService.deleteNoteById(id);
     }
 
-    @ApiOperation("用户端分页查询笔记")
+    @Operation(summary = "用户端分页查询笔记")
     @GetMapping("/page")
     public PageDTO<NotePageVO> pageQuery(NotePageQuery notePageQuery) {
         return learningNoteService.pageQuery(notePageQuery);

@@ -6,8 +6,8 @@ import com.zhiwei.message.domain.dto.UserInboxDTO;
 import com.zhiwei.message.domain.dto.UserInboxFormDTO;
 import com.zhiwei.message.domain.query.UserInboxQuery;
 import com.zhiwei.message.service.IUserInboxService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
  * @author zhiwei
  * @since 2022-08-19
  */
-@Api(tags = "用户收件箱接口")
+@Tag(name = "用户收件箱接口")
 @RestController
 @RequestMapping("/inboxes")
 @RequiredArgsConstructor
@@ -28,12 +28,12 @@ public class UserInboxController {
     private final IUserInboxService inboxService;
 
     @PostMapping
-    @ApiOperation("发送私信")
+    @Operation(summary = "发送私信")
     public Long sentMessageToUser(@RequestBody UserInboxFormDTO userInboxFormDTO){
         return inboxService.sentMessageToUser(userInboxFormDTO);
     }
 
-    @ApiOperation("分页查询收件箱")
+    @Operation(summary = "分页查询收件箱")
     @GetMapping
     public PageDTO<UserInboxDTO> queryUserInBoxesPage(UserInboxQuery query){
         return inboxService.queryUserInBoxesPage(query);

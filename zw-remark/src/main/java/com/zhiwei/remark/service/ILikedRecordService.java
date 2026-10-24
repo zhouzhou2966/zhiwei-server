@@ -4,7 +4,7 @@ import com.zhiwei.remark.domian.dto.LikeRecordFormDTO;
 import com.zhiwei.remark.domian.po.LikedRecord;
 import com.baomidou.mybatisplus.extension.service.IService;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Set;
 

@@ -3,8 +3,8 @@ package com.zhiwei.user.controller;
 import com.zhiwei.common.utils.StringUtils;
 import com.zhiwei.user.domain.dto.StudentFormDTO;
 import com.zhiwei.user.service.ICodeService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * 短信验证码接口。
@@ -26,7 +26,7 @@ import javax.servlet.http.HttpServletRequest;
  */
 @RestController
 @RequestMapping("/code")
-@Api(tags = "验证码接口")
+@Tag(name = "验证码接口")
 public class CodeController {
 
     @Autowired
@@ -41,7 +41,7 @@ public class CodeController {
     @Value("${zw.sms.echo-code:false}")
     private boolean echoCode;
 
-    @ApiOperation("发送手机验证码")
+    @Operation(summary = "发送手机验证码")
     @PostMapping
     public String sendVerifyCode(HttpServletRequest request, @RequestBody StudentFormDTO formDTO) {
         String code = codeService.sendVerifyCode(formDTO.getCellPhone(), resolveClientIp(request));

@@ -1,18 +1,17 @@
 package com.zhiwei.learning.domian.vo;
 
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.util.List;
 
 @Data
-@ApiModel(description = "积分榜单汇总信息")
+@Schema(description = "积分榜单汇总信息")
 public class PointsBoardVO {
-    @ApiModelProperty("我的榜单排名")
+    @Schema(description = "我的榜单排名")
     private Integer rank;
-    @ApiModelProperty("我的积分值")
+    @Schema(description = "我的积分值")
     private Integer points;
-    @ApiModelProperty("上榜人信息")
+    @Schema(description = "上榜人信息")
     private List<PointsBoardItemVO> boardList;
 }

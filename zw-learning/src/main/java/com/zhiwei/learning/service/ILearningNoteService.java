@@ -11,7 +11,7 @@ import com.zhiwei.learning.domian.vo.NoteAdminDetailVO;
 import com.zhiwei.learning.domian.vo.NoteAdminPageVO;
 import com.zhiwei.learning.domian.vo.NotePageVO;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 
 /**

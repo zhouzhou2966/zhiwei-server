@@ -3,8 +3,8 @@ package com.zhiwei.common.validate.annotations;
 import com.zhiwei.common.validate.EnumValidator;
 import com.zhiwei.common.validate.EnumValueValidator;
 
-import javax.validation.Constraint;
-import javax.validation.Payload;
+import jakarta.validation.Constraint;
+import jakarta.validation.Payload;
 import java.lang.annotation.*;
 
 /**

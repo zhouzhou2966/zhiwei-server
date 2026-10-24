@@ -31,34 +31,36 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.7.2</version>
+        <version>3.5.15</version>
     </parent>
 
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <zw.version>1.0</zw.version>
-        <org.projectlombok.version>1.18.34</org.projectlombok.version>
-        <spring-cloud.version>2021.0.3</spring-cloud.version>
-        <spring-cloud-alibaba.version>2021.0.1.0</spring-cloud-alibaba.version>
-        <mybatis-plus.version>3.5.5</mybatis-plus.version>
-        <hutool.version>5.7.17</hutool.version>
-        <swagger.version>3.0.3</swagger.version>
-        <mysql.version>8.0.23</mysql.version>
+        <org.projectlombok.version>1.18.48</org.projectlombok.version>
+        <spring-cloud.version>2025.0.1</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
+        <mybatis-plus.version>3.5.7</mybatis-plus.version>
+        <hutool.version>5.8.47</hutool.version>
+        <!-- knife4j 4.x 起基于 springdoc/OpenAPI3，artifactId 与旧版完全不同，见下方 dependencyManagement -->
+        <swagger.version>4.5.0</swagger.version>
         <ali.sdk.core.version>4.6.0</ali.sdk.core.version>
         <ali.sdk.kms.version>2.10.1</ali.sdk.kms.version>
         <ali.sdk.oss.version>3.10.2</ali.sdk.oss.version>
         <ali.sdk.pay.version>4.33.12.ALL</ali.sdk.pay.version>
         <tencent.cloud.version>3.1.515</tencent.cloud.version>
-        <redisson.version>3.13.6</redisson.version>
-        <elasticsearch.version>7.12.1</elasticsearch.version>
+        <redisson.version>4.7.0</redisson.version>
+        <!-- 只升客户端、不升服务端：7.17 是 7.x 末线，与 VM 里的 7.12 服务端协议兼容 -->
+        <elasticsearch.version>7.17.28</elasticsearch.version>
         <tencent.sdk.cos.version>5.6.89</tencent.sdk.cos.version>
         <tencent.sdk.vod.version>2.1.5</tencent.sdk.vod.version>
-        <xxl-job-version>2.3.1</xxl-job-version>
-        <seata-version>1.5.1</seata-version>
+        <xxl-job-version>2.4.2</xxl-job-version>
+        <seata-version>2.5.0</seata-version>
+        <spring-security-rsa.version>1.1.5</spring-security-rsa.version>
     </properties>
     <!-- 对依赖包进行管理 -->
     <dependencyManagement>
@@ -78,23 +80,33 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- 数据库驱动包管理 -->
+            <!-- 数据库驱动包管理
+                 旧坐标 mysql:mysql-connector-java 已废弃，Boot 3 统一用 com.mysql:mysql-connector-j。
+                 这里不要再声明一条无版本的 dependencyManagement 条目 —— 那会覆盖掉
+                 spring-boot-dependencies 里管理的版本，导致 "dependency.version is missing"。 -->
+
+            <!-- ES 客户端
+                 Boot 3 起官方 BOM 不再管理 RestHighLevelClient（8.x 换成了 elasticsearch-java 新客户端），
+                 所以要自己钉版本。7.17 是 7.x 末线，与 VM 里 7.12 的服务端 REST 协议兼容。 -->
             <dependency>
-                <groupId>mysql</groupId>
-                <artifactId>mysql-connector-java</artifactId>
-                <version>${mysql.version}</version>
+                <groupId>org.elasticsearch.client</groupId>
+                <artifactId>elasticsearch-rest-high-level-client</artifactId>
+                <version>${elasticsearch.version}</version>
             </dependency>
 
-            <!-- mybatis plus 管理 -->
+            <!-- mybatis plus 管理
+                 Boot 3 必须用 -spring-boot3-starter，旧的 mybatis-plus-boot-starter 会带 javax 的自动配置，
+                 启动直接报 ClassNotFoundException。 -->
             <dependency>
                 <groupId>com.baomidou</groupId>
-                <artifactId>mybatis-plus-boot-starter</artifactId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
-            <!--knife4j-->
+            <!--knife4j
+                4.x 只提供 OpenAPI3 版本，旧 springfox 的 knife4j-spring-boot-starter 在 jakarta 下无法使用 -->
             <dependency>
                 <groupId>com.github.xiaoymin</groupId>
-                <artifactId>knife4j-spring-boot-starter</artifactId>
+                <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
                 <version>${swagger.version}</version>
             </dependency>
             <!--腾讯云-->
@@ -131,10 +143,18 @@
                 <artifactId>redisson</artifactId>
                 <version>${redisson.version}</version>
             </dependency>
+            <!--JWT 签名用（KeyStoreKeyFactory）。Boot 的 BOM 不管这个包，只能自己钉版本。
+                原来是从 spring-cloud-starter-bootstrap 传递进来的 1.0.10.RELEASE（Spring 5 时代），
+                Boot 3 下换成 1.1.x 线。-->
+            <dependency>
+                <groupId>org.springframework.security</groupId>
+                <artifactId>spring-security-rsa</artifactId>
+                <version>${spring-security-rsa.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
-                <version>1.18.34</version>
+                <version>${org.projectlombok.version}</version>
                 <scope>provided</scope>
             </dependency>
 
@@ -177,11 +197,9 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!--开启bootstrap文件读取-->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-bootstrap</artifactId>
-        </dependency>
+        <!-- 注意：不再引入 spring-cloud-starter-bootstrap。
+             SCA 2025.0.x 起官方推荐（2025.1.x 起强制）用 spring.config.import 导入 Nacos 配置，
+             配置文件也统一改成 application*.yml，bootstrap 上下文彻底不用了。 -->
     </dependencies>
 
     <build>
@@ -190,10 +208,10 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.8.1</version>
+                    <version>3.13.0</version>
                     <configuration>
-                        <source>11</source> <!-- depending on your project -->
-                        <target>11</target> <!-- depending on your project -->
+                        <source>17</source>
+                        <target>17</target>
                     </configuration>
                 </plugin>
             </plugins>

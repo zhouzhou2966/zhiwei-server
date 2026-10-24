@@ -9,7 +9,7 @@ import com.zhiwei.learning.domian.query.QuestionPageQuery;
 import com.zhiwei.learning.domian.vo.QuestionAdminVO;
 import com.zhiwei.learning.domian.vo.QuestionVO;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 /**
  * <p>

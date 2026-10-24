@@ -85,7 +85,9 @@ public class RedisIdempotentStorage implements IdempotentStorage {
         return redissonClient.getScript(StringCodec.INSTANCE).eval(
                 RScript.Mode.READ_WRITE,
                 lua,
-                RScript.ReturnType.INTEGER,
+                // Redisson 4.x 把 ReturnType 的枚举常量重命名了：INTEGER→LONG、MULTI→LIST、STATUS→STRING。
+                // 语义没变，Lua 的整数返回仍然映射成 Long。
+                RScript.ReturnType.LONG,
                 Collections.singletonList((Object) key),
                 params);
     }

@@ -5,23 +5,29 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
-import springfox.documentation.swagger.web.SwaggerResource;
-import springfox.documentation.swagger.web.SwaggerResourcesProvider;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 网关侧接口文档聚合。
+ * <p>
+ * 原来基于 springfox 的 {@code SwaggerResourcesProvider}，Boot 3 之后 springfox 不可用，
+ * 改成直接产出 springdoc / knife4j 4.x 认的 {@code swagger-config} 结构。
+ * 每个下游服务在 zw-common 里都注册了名为 {@code default} 的 GroupedOpenApi，
+ * 所以文档地址是 {@code /{routeId}/v3/api-docs/default}。
+ */
 @Component
 @Primary
 @RequiredArgsConstructor
-public class GatewaySwaggerResourceProvider implements SwaggerResourcesProvider {
+public class GatewaySwaggerResourceProvider {
 
     /**
-     * swagger2默认的url后缀
+     * springdoc 分组文档的后缀，与 zw-common 里 GroupedOpenApi.builder().group("default") 对应
      */
-    private static final String SWAGGER2_URL = "/v2/api-docs";
+    private static final String API_DOCS_SUFFIX = "/v3/api-docs/default";
 
     /**
      * 路由定位器
@@ -35,28 +41,29 @@ public class GatewaySwaggerResourceProvider implements SwaggerResourcesProvider 
     private String gatewayName;
 
     /**
-     * 获取 Swagger 资源
+     * 生成 knife4j 需要的 urls 列表。
+     * 路由 id 与路由 path 前缀保持一致，所以直接拿 routeId 当上下文路径。
      */
-    @Override
-    public List<SwaggerResource> get() {
-        List<SwaggerResource> resources = new ArrayList<>();
-        Map<String, String> servers = new HashMap<>();
-        // 1.获取路由 Uri中的 Host 作为服务名，把路由id作为请求路径，这里要确保路由id与路由path前缀一致
+    public List<Map<String, String>> getUrls() {
+        // 1.收集下游服务：取路由 Uri 的 Host 作为服务名，排除网关自己（否则会自我聚合，页面里多一个空分组）
+        //    路由表在内存里、数量固定，这里 block 一次拿全量是可接受的；
+        //    原实现用 subscribe 异步填充 Map，返回时 Map 可能还是空的，是个隐藏的竞态。
+        Map<String, String> servers = new LinkedHashMap<>();
         routeLocator.getRoutes()
                 .filter(route -> route.getUri().getHost() != null)
                 .filter(route -> !gatewayName.equals(route.getUri().getHost()))
-                .subscribe( r -> servers.put(r.getUri().getHost(), r.getId()));
-        // 2.创建自定义资源
+                .collectList()
+                .block()
+                .forEach(route -> servers.put(route.getUri().getHost(), route.getId()));
+
+        // 2.按 knife4j 4.x 的 swagger-config 结构组装
+        List<Map<String, String>> urls = new ArrayList<>(servers.size());
         servers.forEach((name, path) -> {
-            // 创建Swagger 资源
-            SwaggerResource swaggerResource = new SwaggerResource();
-            // 设置访问地址
-            swaggerResource.setUrl("/" + path + SWAGGER2_URL);
-            // 设置名称
-            swaggerResource.setName(name);
-            swaggerResource.setSwaggerVersion("3.0.0");
-            resources.add(swaggerResource);
+            Map<String, String> item = new LinkedHashMap<>(4);
+            item.put("name", name);
+            item.put("url", "/" + path + API_DOCS_SUFFIX);
+            urls.add(item);
         });
-        return resources;
+        return urls;
     }
 }

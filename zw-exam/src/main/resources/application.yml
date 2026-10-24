@@ -1,0 +1,42 @@
+server:
+  port: 8089  #端口
+  tomcat:
+    uri-encoding: UTF-8   #服务编码
+  error:
+    include-message: always #返回的响应体带上message
+spring:
+  profiles:
+    active: dev
+  application:
+    name: exam-service
+  cloud:
+    nacos:
+      # 导入配置时必须先能拿到注册中心地址，所以从 application-{profile}.yml 提到这里。
+      # 原来放在 bootstrap-{profile}.yml 里，现在那份只剩 discovery 了。
+      server-addr: 192.168.150.101:8848
+    config:
+      # shared-configs 从 SCA 2023.0.1.3 起已废弃（issue #3998），统一改用 spring.config.import。
+      # 顺序即优先级：越靠后越高，所以服务专属配置放最后，与原来的语义一致。
+      import:
+        - nacos:shared-spring.yaml
+        - nacos:shared-redis.yaml
+        - nacos:shared-mybatis.yaml
+        - nacos:shared-logs.yaml
+        - nacos:shared-feign.yaml
+        - nacos:shared-mq.yaml
+        - nacos:shared-xxljob.yaml
+        - nacos:shared-seata.yaml
+zw:
+  swagger:
+    enable: true
+    enableResponseWrap: true
+    package-path: com.zhiwei.exam.controller
+    title: 知微 - 考试中心接口文档
+    description: 该服务提供题目管理、考试管理、数据统计等功能
+    contact-name: 知微
+    version: v1.0
+  jdbc:
+    database: zw_exam
+  auth:
+    resource:
+      enable: false

@@ -3,9 +3,9 @@ package com.zhiwei.media.controller;
 
 import com.zhiwei.media.domain.dto.FileDTO;
 import com.zhiwei.media.service.IFileService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -20,30 +20,30 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @RestController
 @RequestMapping("/files")
-@Api(tags = "媒资管理相关接口")
+@Tag(name = "媒资管理相关接口")
 @RequiredArgsConstructor
 public class FileController {
 
     private final IFileService fileService;
 
-    @ApiOperation("上传文件")
+    @Operation(summary = "上传文件")
     @PostMapping
     public FileDTO uploadFile(
-            @ApiParam(value = "文件数据") @RequestParam("file")MultipartFile file){
+            @Parameter(description = "文件数据") @RequestParam("file")MultipartFile file){
         return fileService.uploadFile(file);
     }
 
-    @ApiOperation("获取文件信息")
+    @Operation(summary = "获取文件信息")
     @GetMapping("/{id}")
     public FileDTO getFileInfo(
-            @ApiParam(value = "文件id", example = "1") @PathVariable("id") Long id){
+            @Parameter(description = "文件id", example = "1") @PathVariable("id") Long id){
         return fileService.getFileInfo(id);
     }
 
-    @ApiOperation("删除文件")
+    @Operation(summary = "删除文件")
     @DeleteMapping("/{id}")
     public void deleteFileById(
-            @ApiParam(value = "文件id", example = "1") @PathVariable("id") Long id) {
+            @Parameter(description = "文件id", example = "1") @PathVariable("id") Long id) {
         fileService.removeById(id);
     }
 }

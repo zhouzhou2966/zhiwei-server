@@ -2,7 +2,7 @@ package com.zhiwei.common.utils;
 
 import com.zhiwei.common.exceptions.BadRequestException;
 
-import javax.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolation;
 import java.util.Set;
 import java.util.stream.Collectors;
 
