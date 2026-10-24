@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhiwei.message.mapper.ChatUserAckMapper">
+
+    <!--已读位点前推：insert 冲突时按「取较大值」更新，位点只前进不后退。
+        注：多端 ack 并发到达时，先查后改的写法存在回退竞态，必须库内原子完成。-->
+    <insert id="upsertAck">
+        INSERT INTO chat_user_ack (id, user_id, message_type, target_id, last_acked_id, update_time)
+        VALUES (#{ack.id}, #{ack.userId}, #{ack.messageType}, #{ack.targetId}, #{ack.lastAckedId}, NOW())
+        ON DUPLICATE KEY UPDATE
+            last_acked_id = IF(last_acked_id &lt; VALUES(last_acked_id), VALUES(last_acked_id), last_acked_id),
+            update_time   = NOW()
+    </insert>
+</mapper>

@@ -1,0 +1,56 @@
+server:
+  port: 8085  #端口
+  tomcat:
+    uri-encoding: UTF-8   #服务编码
+spring:
+  profiles:
+    active: dev
+  application:
+    name: message-service
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml
+        shared-configs: # 共享配置
+          - data-id: shared-spring.yaml # 共享spring配置
+            refresh: false
+          - data-id: shared-redis.yaml # 共享redis配置
+            refresh: false
+          - data-id: shared-mybatis.yaml # 共享mybatis配置
+            refresh: false
+          - data-id: shared-logs.yaml # 共享日志配置
+            refresh: false
+          - data-id: shared-feign.yaml # 共享feign配置
+            refresh: false
+          - data-id: shared-mq.yaml # 共享mq配置
+            refresh: false
+zw:
+  swagger:
+    enable: true
+    enableResponseWrap: true
+    package-path: com.zhiwei.message.controller
+    title: 知微 - 消息中心接口文档
+    description: 该服务用于站内信、通知管理、短信发送等功能
+    contact-name: 知微
+    version: v1.0
+  auth:
+    resource:
+      enable: true
+      excludeLoginPaths:
+        - /students/register
+        - /users/detail/{isStaff}
+        - /users/list
+        - GET:/users/{id}
+        - /users/{id}/type
+        - /users/ids
+        # WS 握手是浏览器原生 WebSocket 发起的，无法携带 user 请求头，
+        # 由 HandshakeInterceptor 从 query 里的 token 自行鉴权，故排除登录拦截
+        - /ws
+  jdbc:
+    database: zw_message
+  sms:
+    ali:
+      # 凭据（accessId / accessSecret）不写进代码仓库，
+      # 见 Nacos public 命名空间的 message-service.yaml
+      accessId: 
+      accessSecret: 

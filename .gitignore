@@ -1,0 +1,27 @@
+# Created by .ignore support plugin (hsz.mobi)
+### Example user template template
+### Example user template
+
+# IntelliJ project files
+.idea
+*.iml
+out
+gen
+target
+*.class
+
+*.log
+.settings
+.project
+logs
+job
+
+# AI 工具目录（本机项目数据，不入库）
+.workbuddy-ai/
+.qoder/
+
+# IDE 本地配置不入库
+.vscode/
+# 密钥库不入库（本地需自行生成）
+*.jks
+*.p12

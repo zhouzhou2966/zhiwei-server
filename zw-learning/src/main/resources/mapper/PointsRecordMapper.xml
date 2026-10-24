@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhiwei.learning.mapper.PointsRecordMapper">
+    <insert id="createPointsRecordTableBySeason">
+        CREATE TABLE IF NOT EXISTS  `${tableName}`
+        (
+            `id` bigint NOT NULL AUTO_INCREMENT COMMENT '积分记录表id',
+            `user_id` bigint NOT NULL COMMENT '用户id',
+            `type` tinyint NOT NULL COMMENT '积分方式：1-课程学习，2-每日签到，3-课程问答， 4-课程笔记，5-课程评价',
+            `points` tinyint NOT NULL COMMENT '积分值',
+            `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+            PRIMARY KEY (`id`) USING BTREE,
+            KEY `idx_user_id` (`user_id`,`type`) USING BTREE,
+            KEY `idx_create_time` (`create_time`) USING BTREE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC COMMENT='学习积分记录，每个月底清零';
+    </insert>
+
+    <select id="sumPoint" resultType="java.lang.Integer">
+        select COALESCE(sum(points), 0)
+        from points_record
+        where user_id = #{userId}
+          and type = #{type}
+          and create_time >= #{begin}
+          and create_time <![CDATA[<=]]> #{end}
+    </select>
+    <!-- 本周积分：不分组、不分类型，整周所有积分记录求和（签到/学习/问答/笔记/评价都算）
+         COALESCE 兜住「本周一条记录都没有」时的 null，避免上层再判空 -->
+    <select id="sumWeekPoints" resultType="java.lang.Integer">
+        select COALESCE(sum(points), 0)
+        from points_record
+        where user_id = #{userId}
+          and create_time >= #{begin}
+          and create_time <![CDATA[<=]]> #{end}
+    </select>
+    <select id="sumPoints" resultType="com.zhiwei.learning.domian.po.PointsRecord">
+
+        select
+               sum(points) as points,
+               type
+        from points_record
+        where user_id = #{userId}
+          and create_time >= #{begin}
+          and create_time <![CDATA[<=]]> #{end}
+        group by  type
+    </select>
+    <select id="queryPointsRecordList" resultType="com.zhiwei.learning.domian.po.PointsRecord">
+        select *
+        from points_record
+        where create_time >= #{beginTime}
+          and create_time <![CDATA[<=]]> #{endTime} limit #{offset}
+            , #{pageSize}
+        order by create_time asc
+    </select>
+    <!-- 按表名统计（主表 / 历史分表）。tableName 只由 "points_record_" + 赛季号 拼成，不接受外部输入 -->
+    <select id="sumPointsByTable" resultType="java.lang.Integer">
+        select COALESCE(sum(points), 0)
+        from ${tableName}
+        where user_id = #{userId}
+          and create_time &gt;= #{begin}
+          and create_time &lt;= #{end}
+    </select>
+    <select id="countTableByName" resultType="int">
+        select count(*) from information_schema.tables
+        where table_schema = (select database()) and table_name = #{tableName}
+    </select>
+
+
+</mapper>

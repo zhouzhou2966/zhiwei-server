@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhiwei.promotion.mapper.CouponMapper">
+
+    <update id="increaseUsedNum">
+        UPDATE coupon SET used_num = used_num + #{num} WHERE id in
+        <foreach collection="couponIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        <if test="num &gt; 0">
+            AND used_num &lt; issue_num
+        </if>
+        <if test="num &lt; 0">
+            AND used_num &gt; 0
+        </if>
+    </update>
+    <select id="queryCouponsByIds" resultType="com.zhiwei.promotion.domian.po.Coupon">
+        SELECT DISTINCT c.id, c.discount_type, c.discount_value, c.threshold_amount, c.max_discount_amount
+        FROM coupon c
+        INNER JOIN user_coupon uc ON c.id = uc.coupon_id
+        WHERE uc.coupon_id IN
+        <foreach collection="couponIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND uc.status = #{status}
+    </select>
+
+</mapper>

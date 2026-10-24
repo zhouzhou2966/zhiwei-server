@@ -1,0 +1,112 @@
+server:
+  port: 10010
+  tomcat:
+    uri-encoding: UTF-8
+spring:
+  profiles:
+    active: dev
+  application:
+    name: gateway-service
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml
+        shared-configs:
+          - data-id: shared-spring.yaml
+            refresh: false
+          - data-id: shared-redis.yaml
+            refresh: false
+          - data-id: shared-logs.yaml
+            refresh: false
+    gateway:
+      routes:
+        - id: ms
+          uri: lb://media-service
+          predicates:
+            - Path=/ms/**
+        - id: as
+          uri: lb://auth-service
+          predicates:
+            - Path=/as/**
+          filters:
+            - PreserveHostHeader
+        - id: ds
+          uri: lb://data-service
+          predicates:
+            - Path=/ds/**
+        - id: sms
+          uri: lb://message-service
+          predicates:
+            - Path=/sms/**
+        - id: us
+          uri: lb://user-service
+          predicates:
+            - Path=/us/**
+        - id: cs
+          uri: lb://course-service
+          predicates:
+            - Path=/cs/**
+        - id: os
+          uri: lb://order-service
+          predicates:
+            - Path=/os/**
+        - id: ss
+          uri: lb://search-service
+          predicates:
+            - Path=/ss/**
+        - id: ls
+          uri: lb://learning-service
+          predicates:
+            - Path=/ls/**
+        - id: ps
+          uri: lb://pay-service
+          predicates:
+            - Path=/ps/**
+        - id: ts
+          uri: lb://trade-service
+          predicates:
+            - Path=/ts/**
+        - id: es
+          uri: lb://exam-service
+          predicates:
+            - Path=/es/**
+        - id: rs
+          uri: lb://remark-service
+          predicates:
+            - Path=/rs/**
+        - id: prs
+          uri: lb://promotion-service
+          predicates:
+            - Path=/prs/**
+      default-filters:
+        - StripPrefix=1
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        corsConfigurations:
+          '[/**]':
+            allowedOriginPatterns:
+              - "*"
+            allowedMethods:
+              - "GET"
+              - "POST"
+              - "DELETE"
+              - "PUT"
+              - "OPTIONS"
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 360000
+
+logging:
+  level:
+    com.zhiwei: debug
+
+# 网关限流：Redis 令牌桶
+# replenish-rate 是稳态 QPS 上限，burst-capacity 是允许的突发量。
+# 两者取值要留余量：实测峰值 QPS 的 1.5~2 倍，否则正常用户会被误伤。
+zw:
+  rate-limit:
+    enabled: true
+    replenish-rate: 50
+    burst-capacity: 100
+    requested-tokens: 1
+    message: 请求过于频繁，请稍后再试

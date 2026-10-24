@@ -1,0 +1,5 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+  com.zhiwei.api.config.RequestIdRelayConfiguration, \
+  com.zhiwei.api.config.RoleCacheConfig, \
+  com.zhiwei.api.config.FallbackConfig, \
+  com.zhiwei.api.config.CategoryCacheConfig
