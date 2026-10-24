@@ -12,14 +12,95 @@ spring:
       # 导入配置时必须先能拿到注册中心地址，所以从 application-{profile}.yml 提到这里。
       # 原来放在 bootstrap-{profile}.yml 里，现在那份只剩 discovery 了。
       server-addr: 192.168.150.101:8848
-    config:
-      # shared-configs 从 SCA 2023.0.1.3 起已废弃（issue #3998），统一改用 spring.config.import。
-      # 顺序即优先级：越靠后越高，所以服务专属配置放最后，与原来的语义一致。
-      import:
-        - nacos:shared-spring.yaml
-        - nacos:shared-redis.yaml
-        - nacos:shared-logs.yaml
-        - nacos:gateway-service.yaml
+    gateway:
+      # 路由前缀 → 服务名。default-filters 统一 StripPrefix=1，把 /cs、/us 这类前缀切掉后再转发。
+      # 网关不做业务逻辑，只做「鉴权 + 限流 + 转发 + 聚合文档」，所以路由表写死在配置里最直观。
+      routes:
+        - id: ms      # 媒体服务
+          uri: lb://media-service
+          predicates:
+            - Path=/ms/**
+        - id: as      # 认证服务：保留 Host 头，因为签发 cookie 的 domain 依赖原始 Host
+          uri: lb://auth-service
+          predicates:
+            - Path=/as/**
+          filters:
+            - PreserveHostHeader
+        - id: ds      # 数据服务
+          uri: lb://data-service
+          predicates:
+            - Path=/ds/**
+        - id: sms     # 消息服务
+          uri: lb://message-service
+          predicates:
+            - Path=/sms/**
+        - id: us      # 用户服务
+          uri: lb://user-service
+          predicates:
+            - Path=/us/**
+        - id: cs      # 课程服务
+          uri: lb://course-service
+          predicates:
+            - Path=/cs/**
+        - id: os      # 订单服务
+          uri: lb://order-service
+          predicates:
+            - Path=/os/**
+        - id: ss      # 搜索服务
+          uri: lb://search-service
+          predicates:
+            - Path=/ss/**
+        - id: ls      # 学习服务
+          uri: lb://learning-service
+          predicates:
+            - Path=/ls/**
+        - id: ps      # 支付服务
+          uri: lb://pay-service
+          predicates:
+            - Path=/ps/**
+        - id: ts      # 交易服务
+          uri: lb://trade-service
+          predicates:
+            - Path=/ts/**
+        - id: es      # 考试服务
+          uri: lb://exam-service
+          predicates:
+            - Path=/es/**
+        - id: rs      # 评价服务
+          uri: lb://remark-service
+          predicates:
+            - Path=/rs/**
+        - id: prs     # 促销服务
+          uri: lb://promotion-service
+          predicates:
+            - Path=/prs/**
+      default-filters:
+        - StripPrefix=1
+      globalcors:
+        # 预检请求（OPTIONS）不会走到业务路由，必须让网关的 SimpleUrlHandlerMapping 也能应答
+        add-to-simple-url-handler-mapping: true
+        corsConfigurations:
+          '[/**]':
+            # 用 allowedOriginPatterns 而不是 allowedOrigins：后者配 "*" 时不能与 allowCredentials 共存
+            allowedOriginPatterns:
+              - "*"
+            allowedMethods:
+              - "GET"
+              - "POST"
+              - "DELETE"
+              - "PUT"
+              - "OPTIONS"
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 360000
+  config:
+    # shared-configs 从 SCA 2023.0.1.3 起已废弃（issue #3998），统一改用 spring.config.import。
+    # 顺序即优先级：越靠后越高，所以服务专属配置放最后，与原来的语义一致。
+    import:
+      - nacos:shared-spring.yaml
+      - nacos:shared-redis.yaml
+      - nacos:shared-logs.yaml
+      - nacos:gateway-service.yaml
 logging:
   level:
     com.zhiwei: debug
