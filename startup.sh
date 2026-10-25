@@ -59,7 +59,7 @@ if [ "$DEBUG_PORT" = "0" ]; then
   docker run -d --name ${CONTAINER_NAME} \
    -p "${PORT}:${PORT}" \
    -e JAVA_OPTS="${JAVA_OPTS}" \
-   --memory 300m --memory-swap -1 \
+   --memory 1024m --memory-swap -1 \
    --network zhiwei-net ${IMAGE_NAME} \
   || exit 1
 else
