@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
+import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -53,11 +54,38 @@ public class CommonExceptionAdvice {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public Object handleMethodArgumentNotValidException(MethodArgumentNotValidException e) {
         String msg = e.getBindingResult().getAllErrors()
-                .stream().map(ObjectError::getDefaultMessage)
+                .stream().map(this::friendlyFieldMessage)
                 .collect(Collectors.joining("|"));
         log.error("请求参数校验异常 -> {}", msg);
         log.debug("", e);
         return processResponse(400, 400, msg);
+    }
+
+    /**
+     * 把 Spring 的默认校验文案换成不泄露内部实现的信息。
+     * <p>
+     * {@link ObjectError#getDefaultMessage()} 在两种场景下语义完全不同：
+     * <ul>
+     *   <li>字段上标了 {@code @NotNull}/{@code @Size} 等注解且校验不通过 —— 返回注解里写的 message，
+     *       本来就是给人看的，原样透出没问题；</li>
+     *   <li>查询对象的字段类型转换失败 —— 返回
+     *       {@code Failed to convert property value of type 'java.lang.String' to required type
+     *       'java.lang.Integer' for property 'pageNo'; nested exception is ...}，
+     *       把包名、类名、Spring 内部异常链全暴露给前端了。</li>
+     * </ul>
+     * 这里按前缀识别后一种，替换成「参数格式错误：字段名」。真实原因仍然完整打在日志里。
+     * </p>
+     */
+    private String friendlyFieldMessage(ObjectError error) {
+        String raw = error.getDefaultMessage();
+        if (raw == null || raw.isBlank()) {
+            return "参数格式错误";
+        }
+        if (raw.startsWith("Failed to convert")) {
+            String field = error instanceof FieldError fieldError ? fieldError.getField() : null;
+            return field == null ? "参数格式错误" : "参数格式错误：" + field;
+        }
+        return raw;
     }
     @ExceptionHandler(BindException.class)
     public Object handleBindException(BindException e) {

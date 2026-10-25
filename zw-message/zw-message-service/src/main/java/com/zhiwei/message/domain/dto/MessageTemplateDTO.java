@@ -21,8 +21,18 @@ public class MessageTemplateDTO extends BaseDTO {
     @Schema(description = "信发送模板id，新增时无需填写")
     private Long id;
 
-    @Schema(description = "第三方短信推送渠道id")
-    private Long platformCode;
+    /**
+     * 第三方短信推送渠道编码，如 {@code aliYun}、{@code tencent}。
+     * <p>
+     * <b>为什么是 String 而不是 Long</b>：库表 {@code message_template.platform_code} 是
+     * {@code varchar(50)}，存的就是平台标识字符串。这里原来声明成 {@code Long}，
+     * 导致 {@code PageDTO.of(page, MessageTemplateDTO.class)} 走 hutool 的字段类型转换时
+     * 对 {@code "aliYun"} 抛 {@code NumberFormatException}，整个分页接口 500。
+     * 与 {@code MessageTemplateFormDTO}、{@code MessageTemplate} 保持一致。
+     * </p>
+     */
+    @Schema(description = "第三方短信推送渠道编码", example = "aliYun")
+    private String platformCode;
 
     @Schema(description = "第三方短信推送渠道名称")
     private String platformName;

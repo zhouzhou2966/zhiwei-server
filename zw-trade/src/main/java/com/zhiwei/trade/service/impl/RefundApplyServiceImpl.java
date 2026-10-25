@@ -38,6 +38,7 @@ import com.zhiwei.trade.mapper.RefundApplyMapper;
 import com.zhiwei.trade.service.IOrderDetailService;
 import com.zhiwei.trade.service.IRefundApplyService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +58,7 @@ import static com.zhiwei.trade.constants.RefundStatus.REJECT;
  * @author zhiwei
  * @since 2022-08-29
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RefundApplyServiceImpl extends ServiceImpl<RefundApplyMapper, RefundApply> implements IRefundApplyService {
@@ -235,6 +237,20 @@ public class RefundApplyServiceImpl extends ServiceImpl<RefundApplyMapper, Refun
         return p;
     }
 
+    /**
+     * 批量取退款单关联的用户信息（申请人 + 审批人）。
+     * <p>
+     * <b>为什么查不到用户时只告警不抛异常</b>：原来这里是
+     * {@code if (userDTOS.size() != uIds.size()) throw new BizIllegalException("用户数据有误")}，
+     * 语义上想保证「记录引用的用户都存在」。但退款单是历史数据，用户注销、测试数据被清理、
+     * 早期脏数据都会让某条 {@code creater}/{@code approver} 变成孤儿 id，
+     * 一条孤儿记录就让整个退款列表 500 —— 用一条历史脏数据否决整页数据，代价不对等。
+     * <p>
+     * 调用方 {@code queryRefundApplyPage} 本来就已经对 {@code null} 做了兜底：
+     * {@code exchangeRoleName(null)} 返回 {@code "--"}、手机号置 null，
+     * 所以这里把缺失的用户剔掉、返回能查到的部分即可，页面上显示为「--」比整页打不开更合理。
+     * </p>
+     */
     private Map<Long, UserDTO> getRefundUserInfo(List<RefundApply> records) {
         Set<Long> uIds = new HashSet<>();
         for (RefundApply record : records) {
@@ -242,9 +258,16 @@ public class RefundApplyServiceImpl extends ServiceImpl<RefundApplyMapper, Refun
             uIds.add(record.getApprover());
         }
         uIds.remove(null);
+        if (uIds.isEmpty()) {
+            return new HashMap<>(0);
+        }
         List<UserDTO> userDTOS = userClient.queryUserByIds(uIds);
         if (userDTOS.size() != uIds.size()) {
-            throw new BizIllegalException("用户数据有误");
+            Set<Long> found = userDTOS.stream().map(UserDTO::getId).collect(Collectors.toSet());
+            Set<Long> missing = new HashSet<>(uIds);
+            missing.removeAll(found);
+            log.warn("退款单关联的用户不存在，对应字段将以「--」展示。缺失 userId={}，本页涉及 {} 条退款单",
+                    missing, records.size());
         }
         return userDTOS.stream().collect(Collectors.toMap(UserDTO::getId, u -> u));
     }
