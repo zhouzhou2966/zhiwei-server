@@ -64,7 +64,7 @@ public class CookieBuilder {
      * 从请求的 Host 推导 cookie 的父域，无法推导时返回 null（表示不设置 domain）。
      *
      * <p>只有形如 {@code www.zhiwei.com} 这种「至少三段」的域名才提取父域
-     * （得到 {@code .zhiwei.com}），用于子域之间共享 cookie。
+     * （得到 {@code zhiwei.com}），用于子域之间共享 cookie。
      * IP 字面量、IPv6、单段主机名（localhost）、两段域名（zhiwei.com）一律返回 null，
      * 让 cookie 自动绑定当前 host。</p>
      *
@@ -76,8 +76,13 @@ public class CookieBuilder {
      * 只剩严格的 {@code Rfc6265CookieProcessor}，直接抛
      * {@code IllegalArgumentException: An invalid domain [...] was specified for this cookie}。</p>
      *
+     * <p><b>为什么返回值不带前导点</b>：RFC 6265 §4.1.2.3 规定 Domain 属性开头的 {@code "."}
+     * 会被忽略，写不写等价。但 {@code Rfc6265CookieProcessor.validateDomain()} 的校验是
+     * 「每个 label 必须以字母或数字开头」，首字符为 {@code "."} 时 {@code prev == -1 && cur == '.'}
+     * 直接判非法 —— 所以拼成 {@code .zhiwei.com} 照样抛异常。这里只返回 {@code zhiwei.com}。</p>
+     *
      * <p>现象是登录接口返回 500，但 token 其实已经签发成功 —— 挂在最后写 refresh-token
-     * cookie 这一步。用 IP 直连服务时必现，用域名访问时不复现。</p>
+     * cookie 这一步。用 IP / localhost 访问不复现，用 {@code api.xxx.com} 这种域名访问必现。</p>
      */
     private static String resolveParentDomain(String serverName) {
         if (StringUtils.isBlank(serverName)) {
@@ -93,7 +98,7 @@ public class CookieBuilder {
         if (first <= 0 || first == last) {
             return null;
         }
-        return "." + serverName.substring(first + 1);
+        return serverName.substring(first + 1);
     }
 
     /**
