@@ -74,7 +74,7 @@
 | 组件 | 端口 | 用途 |
 |---|---|---|
 | MySQL | 3306 | 13 个业务库（`zw_user`、`zw_course`、`zw_learning`…） |
-| Nacos | 8848 | 注册中心 + 配置中心 |
+| Nacos | 8848 / 8080 | 8848 注册中心 + 配置中心（**客户端连这个**）；8080 是控制台（**浏览器开这个**） |
 | RabbitMQ | 5672 / 15672 | 业务消息，需建 vhost |
 | Redis | 6379 | 缓存、分布式锁、积分榜 ZSet |
 | Elasticsearch | 9200 | 课程搜索 |
@@ -95,6 +95,11 @@ zw_promotion  zw_remark  zw_search  zw_media  zw_message  zw_data
 ##### 3. 导入 Nacos 配置
 
 在 Nacos 控制台 `public` 命名空间建以下配置（`yaml` 格式）：
+
+> **控制台地址是 `http://<nacos-host>:8080/`，不是 2.x 时代的 `8848/nacos`。**
+> Nacos 3.0 把控制台从 8848 挪到了 8080 的根路径，8848 上只剩 OpenAPI（`/nacos/v1|v2`），
+> 访问 `8848/nacos` 只会返回一行纯文本 `Nacos Console default port is 8080, and the path is /.`。
+> 默认账号 `nacos` / `nacos`，登录后建议改掉。
 
 ```
 shared-spring.yaml     公共 Spring 配置
