@@ -42,10 +42,10 @@ spring:
           uri: lb://course-service
           predicates:
             - Path=/cs/**
-        - id: os      # 订单服务
-          uri: lb://order-service
-          predicates:
-            - Path=/os/**
+        # 原来这里还有一条 id=os → lb://order-service（Path=/os/**）。
+        # 整个工程里没有任何 order-service，Nacos 上也不存在该服务名，
+        # 订单相关能力全在 trade-service（下面的 ts 路由）。
+        # 留着它的唯一效果是 swagger 聚合里多出一个永远 503 的分组，故删除。
         - id: ss      # 搜索服务
           uri: lb://search-service
           predicates:
