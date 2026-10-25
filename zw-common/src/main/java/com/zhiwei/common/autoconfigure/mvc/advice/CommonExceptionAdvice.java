@@ -15,6 +15,7 @@ import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -78,6 +79,23 @@ public class CommonExceptionAdvice {
         return processResponse( HttpStatus.OK.value(), HttpStatus.BAD_REQUEST.value(),
                 e.getConstraintViolations().stream().map(ConstraintViolation::getMessage).distinct().collect(Collectors.joining("|"))
                 );
+    }
+
+    /**
+     * 请求了一个没有对应 handler 的路径。
+     *
+     * Spring 6.1 起，这类请求不再走 BasicErrorController，而是由 ResourceHttpRequestHandler
+     * 抛 NoResourceFoundException（它 extends ServletException，是普通 Exception），
+     * 于是会被下面的 {@code @ExceptionHandler(Exception.class)} 兜底接住，返回 500「服务器内部异常」。
+     * Boot 2.7 / Spring 5.3 时代这类请求走 BasicErrorController，不经过 @ControllerAdvice，所以是 404。
+     *
+     * 结果就是升级后「接口不存在」看起来像「服务炸了」：监控上是一堆 5xx、客户端以为该重试、
+     * 排查时先去翻日志找异常栈。这里单独接住，按 404 语义返回，别让兜底分支吃掉。
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public Object handleNoResourceFound(NoResourceFoundException e) {
+        log.warn("请求路径不存在 uri : {}", WebUtils.getRequest().getRequestURI());
+        return processResponse(HttpStatus.NOT_FOUND.value(), HttpStatus.NOT_FOUND.value(), "请求路径不存在");
     }
 
     @ExceptionHandler(Exception.class)
