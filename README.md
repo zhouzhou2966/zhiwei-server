@@ -23,7 +23,6 @@
 | 消息队列 | RabbitMQ | 3.8 |
 | 分布式事务 | Seata（AT 模式） | 2.5.0 |
 | 搜索引擎 | Elasticsearch | 7.17.28（客户端） |
-| 文档数据库 | MongoDB | — |
 | 定时任务 | XXL-JOB | 2.4.2 |
 | 流控降级 | Sentinel | 1.8.9 |
 | 接口文档 | springdoc + Knife4j | 2.8 / 4.5.0 |
@@ -79,8 +78,7 @@
 | RabbitMQ | 5672 / 15672 | 业务消息，需建 vhost |
 | Redis | 6379 | 缓存、分布式锁、积分榜 ZSet |
 | Elasticsearch | 9200 | 课程搜索 |
-| MongoDB | 27017 | 考试记录 |
-| Seata Server | 8091 | 分布式事务协调 |
+| Seata Server | 8099 | 分布式事务协调 |
 | XXL-JOB | 8880 | 定时任务调度 |
 
 ##### 2. 建库导入数据
@@ -128,6 +126,12 @@ keytool -genkeypair -alias zw -keyalg RSA -keysize 2048 -validity 3650 \
 
 `alias` 必须与 Nacos 中 `encrypt.key-store.alias` 一致，`storepass` 与 `encrypt.key-store.password` 一致。
 
+> 仓库里的 `zw.jks` 已被删除（凭据不入库）。生产/CI 环境走的是另一条路：
+> `AuthConfig` 优先读 Nacos 里的 `zw.auth.jks-base64`（base64 编码的 JKS 字节），
+> 配了就直接用内存里的 `ByteArrayResource`，不再需要 classpath 上有文件；
+> 只有这一项为空时才回退到 `encrypt.key-store.location` 指向的 `classpath:zw.jks`。
+> 所以本地调试可以放文件，但要保证 Jenkins 等无状态构建出来的 jar 不依赖它。
+
 ##### 5. 编译与启动
 
 ```bash
@@ -142,9 +146,12 @@ mvn clean package -DskipTests
 java -jar zw-gateway/target/*.jar --spring.profiles.active=dev
 ```
 
-启动顺序建议：`zw-gateway` 可最后起，其余服务无强依赖；但 `zw-common` 必须先 install。
+启动顺序：**`zw-auth` 必须先起**，网关的 `JwtSignerHolder` 启动时要向它拉取 JWK 公钥，
+auth 没起来网关会一直刷「加载 auth 服务地址失败」；其余服务之间无强依赖，网关可以最后起。
+另外 `zw-common` 要先 `install` 到本地仓库，否则单独 `mvn -pl <模块>` 编译会拿到旧 jar。
 
-接口文档：`http://localhost:{port}/doc.html`
+接口文档：单个服务是 `http://localhost:{port}/doc.html`；
+网关做了聚合，起齐服务后直接看 `http://localhost:10010/doc.html` 就能在同一个页面里切换 13 个服务的分组。
 
 #### 核心设计
 
