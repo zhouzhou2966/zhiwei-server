@@ -4,7 +4,8 @@ BASE_PATH='/usr/local/src/jenkins/workspace/zw-dev-build'
 PROJECT_NAME=""
 PROJECT_PATH=''
 CONTAINER_NAME=""
-JAVA_OPTS="-Xms300m -Xmx300m"
+# Boot 3 + JDK 17 下单个服务实测 RSS 380~450MB，300m 上限会 OOM，这里放到 512m
+JAVA_OPTS="-Xms256m -Xmx512m -XX:MaxMetaspaceSize=256m"
 PORT=8080
 DEBUG_PORT=0
 while getopts "c:n:d:p:o:a:" opt; do
