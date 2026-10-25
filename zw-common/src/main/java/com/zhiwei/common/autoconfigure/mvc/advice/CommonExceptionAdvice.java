@@ -8,17 +8,23 @@ import com.zhiwei.common.utils.WebUtils;
 import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.ObjectError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -96,6 +102,67 @@ public class CommonExceptionAdvice {
     public Object handleNoResourceFound(NoResourceFoundException e) {
         log.warn("请求路径不存在 uri : {}", WebUtils.getRequest().getRequestURI());
         return processResponse(HttpStatus.NOT_FOUND.value(), HttpStatus.NOT_FOUND.value(), "请求路径不存在");
+    }
+
+    /*
+     * 下面四个是 Spring MVC 在「请求进不到 Controller 方法体」时抛的异常。
+     *
+     * 它们都是普通 Exception，会被最后一个 @ExceptionHandler(Exception.class) 兜底吃掉，
+     * 于是统一变成 500「服务器内部异常」。问题在于：
+     *   - 明明是用 POST 打了 @GetMapping 的接口（405）、少传了必填参数（400）、
+     *     JSON 写坏了（400）、?pageNo=abc 类型不对（400），客户端却是「服务端炸了」的观感；
+     *   - 监控上这些全算 5xx，会污染错误率告警；
+     *   - 排查时得先去日志翻「其他异常 uri」下面那一行异常栈才知道到底是谁的错。
+     * 2026-10-25 冒烟时就有一连串 500 其实全是 MissingServletRequestParameterException
+     * （漏传 bizIds / ids / types / couponIds），白查了半天。
+     *
+     * 注意：这不是 Boot 3 升级带来的回退，Boot 2.7 时代同样是 500 —— 只是一直没人管。
+     */
+
+    /**
+     * 请求方法不支持，例如用 POST 打 {@code @GetMapping} 的接口。按 405 返回。
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public Object handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        log.warn("请求方法不支持 uri : {} -> {}", WebUtils.getRequest().getRequestURI(), e.getMessage());
+        Set<HttpMethod> supported = e.getSupportedHttpMethods();
+        String msg = supported == null || supported.isEmpty()
+                ? "请求方法不支持：" + e.getMethod()
+                : "请求方法不支持：" + e.getMethod() + "，该接口支持 " + supported;
+        return processResponse(HttpStatus.METHOD_NOT_ALLOWED.value(), HttpStatus.METHOD_NOT_ALLOWED.value(), msg);
+    }
+
+    /**
+     * 少了必填的 query / form 参数，例如 {@code /likes/list} 忘了传 {@code bizIds}。按 400 返回。
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public Object handleMissingParameter(MissingServletRequestParameterException e) {
+        log.warn("缺少请求参数 uri : {} -> {}", WebUtils.getRequest().getRequestURI(), e.getMessage());
+        return processResponse(HttpStatus.BAD_REQUEST.value(), HttpStatus.BAD_REQUEST.value(),
+                "缺少请求参数：" + e.getParameterName());
+    }
+
+    /**
+     * 参数类型对不上，例如 {@code ?pageNo=abc} 却声明成 Integer。按 400 返回。
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public Object handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        log.warn("参数类型不匹配 uri : {} -> {}", WebUtils.getRequest().getRequestURI(), e.getMessage());
+        String required = e.getRequiredType() == null ? "?" : e.getRequiredType().getSimpleName();
+        return processResponse(HttpStatus.BAD_REQUEST.value(), HttpStatus.BAD_REQUEST.value(),
+                "参数类型不匹配：" + e.getName() + " 应为 " + required);
+    }
+
+    /**
+     * 请求体读不出来，例如 JSON 少了引号、字段类型写错。按 400 返回。
+     *
+     * <p>刻意不把 {@code e.getMessage()} 原样返回给前端 —— 里面会带出实体类的全限定名和
+     * 字段路径，属于内部结构泄露。日志里记全量，响应只给一句人话。</p>
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public Object handleMessageNotReadable(HttpMessageNotReadableException e) {
+        log.warn("请求体解析失败 uri : {} -> {}", WebUtils.getRequest().getRequestURI(), e.getMessage());
+        return processResponse(HttpStatus.BAD_REQUEST.value(), HttpStatus.BAD_REQUEST.value(), "请求体格式错误");
     }
 
     @ExceptionHandler(Exception.class)
