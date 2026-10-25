@@ -93,6 +93,16 @@
                 <artifactId>elasticsearch-rest-high-level-client</artifactId>
                 <version>${elasticsearch.version}</version>
             </dependency>
+            <!-- 低层 RestClient 也必须一起钉住。
+                 Boot 3.5 的 BOM 会把 elasticsearch-rest-client 拉到 8.18.x，
+                 而 RestHighLevelClient 还是 7.17 —— 两个大版本混用会在运行期
+                 报 NoSuchMethodError（8.x 的 RestClientBuilder 方法签名变了）。
+                 打包前实测 zw-search 里同时存在 8.18.8 和 7.17.28，就是这个原因。 -->
+            <dependency>
+                <groupId>org.elasticsearch.client</groupId>
+                <artifactId>elasticsearch-rest-client</artifactId>
+                <version>${elasticsearch.version}</version>
+            </dependency>
 
             <!-- mybatis plus 管理
                  Boot 3 必须用 -spring-boot3-starter，旧的 mybatis-plus-boot-starter 会带 javax 的自动配置，

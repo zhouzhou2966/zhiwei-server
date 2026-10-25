@@ -55,8 +55,14 @@ public class AccountAuthFilter implements GlobalFilter, Ordered {
         R<LoginUserDTO> r = authUtil.parseToken(token);
 
         // 4.如果用户是登录状态，尝试更新请求头，传递用户信息
+        //    ⚠️ 这里必须接住 mutate() 的返回值。
+        //    ServerWebExchange.mutate().build() 返回的是**新的** exchange 实例，
+        //    原 exchange 不会被修改；写成 `exchange.mutate()...build();`（不赋值）
+        //    等于什么都没做 —— USER_HEADER 根本不会出现在转发给下游的请求里，
+        //    下游的 LoginAuthInterceptor 拿不到 userId，一律返回 401 空响应。
+        //    现象：网关登录成功、token 有效、JWK 加载正常，但任何需要登录的接口都 401。
         if(r.success()){
-            exchange.mutate()
+            exchange = exchange.mutate()
                     .request(builder -> builder.header(USER_HEADER, r.getData().getUserId().toString()))
                     .build();
         }

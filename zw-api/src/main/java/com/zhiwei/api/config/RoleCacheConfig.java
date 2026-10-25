@@ -6,9 +6,18 @@ import com.zhiwei.api.cache.RoleCache;
 import com.zhiwei.api.client.auth.AuthClient;
 import com.zhiwei.api.dto.auth.RoleDTO;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
 
+/**
+ * 角色缓存配置。
+ *
+ * <p>同 {@link CategoryCacheConfig}：{@code @Configuration} 必须显式标注，
+ * Boot 3 的 {@code AutoConfiguration.imports} 不会像 Boot 2 的
+ * {@code spring.factories} 那样按 lite mode 兜底解析。</p>
+ */
+@Configuration
 public class RoleCacheConfig {
     /**
      * 角色的caffeine缓存

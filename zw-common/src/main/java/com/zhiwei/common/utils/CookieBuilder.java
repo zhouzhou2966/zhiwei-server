@@ -11,6 +11,7 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Data
@@ -43,9 +44,10 @@ public class CookieBuilder {
         if(StringUtils.isNotBlank(domain)) {
             cookie.setDomain(domain);
         }else if (request != null) {
-            String serverName = request.getServerName();
-            serverName = StringUtils.subAfter(serverName, ".", false);
-            cookie.setDomain("." + serverName);
+            String parentDomain = resolveParentDomain(request.getServerName());
+            if (parentDomain != null) {
+                cookie.setDomain(parentDomain);
+            }
         }
         cookie.setHttpOnly(httpOnly);
         cookie.setMaxAge(maxAge);
@@ -53,6 +55,45 @@ public class CookieBuilder {
         log.debug("生成cookie，编码方式:{}，【{}={}，domain:{};maxAge={};path={};httpOnly={}】",
                 charset.name(), name, value, domain, maxAge, path, httpOnly);
         response.addCookie(cookie);
+    }
+
+    /** IPv4 字面量，例如 192.168.150.101 */
+    private static final Pattern IPV4 = Pattern.compile("^\\d{1,3}(\\.\\d{1,3}){3}$");
+
+    /**
+     * 从请求的 Host 推导 cookie 的父域，无法推导时返回 null（表示不设置 domain）。
+     *
+     * <p>只有形如 {@code www.zhiwei.com} 这种「至少三段」的域名才提取父域
+     * （得到 {@code .zhiwei.com}），用于子域之间共享 cookie。
+     * IP 字面量、IPv6、单段主机名（localhost）、两段域名（zhiwei.com）一律返回 null，
+     * 让 cookie 自动绑定当前 host。</p>
+     *
+     * <p><b>为什么必须做这个区分</b>：原实现无条件执行
+     * {@code subAfter(serverName, ".")} 再拼 {@code "."}，对 {@code www.zhiwei.com}
+     * 是对的，但对 {@code 127.0.0.1} 会得到 {@code .0.0.1}、对 {@code localhost}
+     * 会得到 {@code .ocalhost}。Tomcat 9 的 {@code LegacyCookieProcessor}
+     * 不校验域、静默容忍这种值，所以能跑；Tomcat 10.1 已删除该类，
+     * 只剩严格的 {@code Rfc6265CookieProcessor}，直接抛
+     * {@code IllegalArgumentException: An invalid domain [...] was specified for this cookie}。</p>
+     *
+     * <p>现象是登录接口返回 500，但 token 其实已经签发成功 —— 挂在最后写 refresh-token
+     * cookie 这一步。用 IP 直连服务时必现，用域名访问时不复现。</p>
+     */
+    private static String resolveParentDomain(String serverName) {
+        if (StringUtils.isBlank(serverName)) {
+            return null;
+        }
+        // IP 字面量（IPv4 / IPv6）不设 domain
+        if (IPV4.matcher(serverName).matches() || serverName.indexOf(':') >= 0) {
+            return null;
+        }
+        int first = serverName.indexOf('.');
+        int last = serverName.lastIndexOf('.');
+        // 无点（localhost）、首字符是点、只有一个点（zhiwei.com）都提不出有意义的父域
+        if (first <= 0 || first == last) {
+            return null;
+        }
+        return "." + serverName.substring(first + 1);
     }
 
     /**
