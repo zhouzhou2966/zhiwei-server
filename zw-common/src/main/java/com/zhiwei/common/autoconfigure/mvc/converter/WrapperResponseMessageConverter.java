@@ -1,6 +1,7 @@
 package com.zhiwei.common.autoconfigure.mvc.converter;
 
 import com.zhiwei.common.utils.WebUtils;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpOutputMessage;
 import org.springframework.http.MediaType;
@@ -29,7 +30,20 @@ public class WrapperResponseMessageConverter implements HttpMessageConverter<Obj
 
     @Override
     public boolean canWrite(@NonNull Class<?> clazz, MediaType mediaType) {
-        return WebUtils.isGatewayRequest() && delegate.canWrite(clazz, mediaType);
+        if (!WebUtils.isGatewayRequest() || !delegate.canWrite(clazz, mediaType)) {
+            return false;
+        }
+        // 接口文档必须放行给 ByteArrayHttpMessageConverter。
+        // springdoc 的 openapiJson() 返回 byte[]，一旦被 Jackson 接手，
+        // 默认行为是序列化成 base64 字符串（"eyJvcGVuYXBp..."），
+        // Swagger UI / Knife4j 拿到这种东西是解析不了的。
+        // 这个 bean 会被 Boot 的 HttpMessageConvertersAutoConfiguration 收进转换器链，
+        // 且排在默认转换器之前，所以光改 WrapperResponseBodyAdvice 不够，这里也得挡一次。
+        HttpServletRequest request = WebUtils.getRequest();
+        if (request != null && request.getRequestURI().startsWith("/v3/api-docs")) {
+            return false;
+        }
+        return true;
     }
 
     @Override

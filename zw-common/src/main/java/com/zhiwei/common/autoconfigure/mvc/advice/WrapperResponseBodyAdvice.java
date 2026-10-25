@@ -25,7 +25,13 @@ public class WrapperResponseBodyAdvice implements ResponseBodyAdvice<Object> {
             Object body, @NonNull MethodParameter returnType, @NonNull MediaType selectedContentType,
             @NonNull Class<? extends HttpMessageConverter<?>> selectedConverterType,
             @NonNull ServerHttpRequest request, @NonNull ServerHttpResponse response) {
-        if (request.getURI().getPath().equals("/v2/api-docs")){
+        // 接口文档不能包 R。springdoc 的 openapiJson() 返回的是 byte[]，
+        // 一旦被包成 R.ok(byte[]) ，Jackson 会按默认规则把 byte[] 序列化成 base64，
+        // 前端拿到的是 {"code":200,"data":"eyJvcGVuYXBp..."}，Swagger UI / Knife4j 解析不了。
+        // 原来这里只挡了 springfox 时代的 /v2/api-docs，迁到 knife4j 4.x / OpenAPI3 之后
+        // 路径变成 /v3/api-docs 及其子路径，判断没跟着改，于是文档一直是坏的。
+        String path = request.getURI().getPath();
+        if (path.startsWith("/v3/api-docs") || path.equals("/v2/api-docs")) {
             return body;
         }
         if (body == null) {
