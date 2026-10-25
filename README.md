@@ -11,8 +11,8 @@
 | 分类 | 选型 | 版本 |
 |---|---|---|
 | 语言 / 运行时 | Java | 17 |
-| 基础框架 | Spring Boot | 3.5.15 |
-| 微服务 | Spring Cloud | 2025.0.1 |
+| 基础框架 | Spring Boot | 3.5.16 |
+| 微服务 | Spring Cloud | 2025.0.3 |
 | 微服务（阿里系） | Spring Cloud Alibaba | 2025.0.0.0 |
 | 注册 / 配置中心 | Nacos | 3.0.3 |
 | 网关 | Spring Cloud Gateway | — |

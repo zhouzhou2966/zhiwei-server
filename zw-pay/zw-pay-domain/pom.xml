@@ -20,7 +20,9 @@
         <dependency>
             <groupId>io.swagger.core.v3</groupId>
             <artifactId>swagger-annotations-jakarta</artifactId>
-            <version>2.2.55</version>
+            <!-- 版本交给根 pom 的 ${swagger-api.version} 统一管。
+                 这里原来硬编码 2.2.55，而 knife4j 带进来的是 2.2.19，结果是 pay / trade
+                 两个包里出现 annotations 2.2.55 + core/models 2.2.19 的混搭。 -->
             <scope>compile</scope>
         </dependency>
         <dependency>

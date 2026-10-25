@@ -53,7 +53,8 @@
         <dependency>
             <groupId>com.xuxueli</groupId>
             <artifactId>xxl-job-core</artifactId>
-            <version>2.4.0</version>
+            <!-- 版本交给根 pom 的 ${xxl-job-version}（2.4.2）。
+                 这里原来硬编码 2.4.0，导致 remark 单独一个服务跑 2.4.0、其余 8 个跑 2.4.2。 -->
         </dependency>
 
         <!--discovery-->

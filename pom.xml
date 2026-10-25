@@ -31,7 +31,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.15</version>
+        <version>3.5.16</version>
     </parent>
 
 
@@ -42,12 +42,29 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <zw.version>1.0</zw.version>
         <org.projectlombok.version>1.18.48</org.projectlombok.version>
-        <spring-cloud.version>2025.0.1</spring-cloud.version>
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
         <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
+        <!-- 注意：SCA 只能停在 2025.0.0.0。2025.1.0.0 对齐的是 spring-cloud 2025.1.x，
+             而 spring-cloud-dependencies:2025.1.x 的 pom 里写死 <spring-boot.version>4.0.0</spring-boot.version>，
+             跟着升就等于整体跳 Spring Boot 4。 -->
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <hutool.version>5.8.47</hutool.version>
         <!-- knife4j 4.x 起基于 springdoc/OpenAPI3，artifactId 与旧版完全不同，见下方 dependencyManagement -->
         <swagger.version>4.5.0</swagger.version>
+        <!-- knife4j 4.5.0 是它的最后一版，官方没跟 Boot 3.4+ 适配（issue #867 / #884）：
+             它带的 springdoc 2.3.0 仍在调 ControllerAdviceBean(Object)，而这个构造器
+             在 Spring 6.2 已经删掉了，于是 /v3/api-docs 直接抛
+             NoSuchMethodError: 'void org.springframework.web.method.ControllerAdviceBean.<init>(java.lang.Object)'。
+             所以必须自己把 springdoc 顶到 2.8.x —— 2.8 线对应 Boot 3.4/3.5；
+             3.x 线对应 Boot 4.0，不能跨过去。
+             实测 knife4j 4.5.0 只引用 springdoc 的 4 个类型（SpringDocConfigProperties、
+             SpringDocConfigProperties$GroupConfig、GlobalOpenApiCustomizer、GlobalOperationCustomizer），
+             全是 2.x 稳定接口，换内核不会把它顶坏。 -->
+        <springdoc.version>2.8.17</springdoc.version>
+        <!-- springdoc 2.8.17 自带的 swagger-core 版本。
+             单独钉住是为了压掉 zw-pay-domain 里残留的 2.2.55 硬编码：
+             否则 pay / trade 两个包里会出现 annotations 2.2.55 + core/models 2.2.47 的混搭。 -->
+        <swagger-api.version>2.2.47</swagger-api.version>
         <ali.sdk.core.version>4.6.0</ali.sdk.core.version>
         <ali.sdk.kms.version>2.10.1</ali.sdk.kms.version>
         <ali.sdk.oss.version>3.10.2</ali.sdk.oss.version>
@@ -118,6 +135,41 @@
                 <groupId>com.github.xiaoymin</groupId>
                 <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
                 <version>${swagger.version}</version>
+            </dependency>
+            <!-- springdoc 内核：knife4j 4.5.0 只负责 UI 和几个 customizer，真正的 OpenAPI 生成在 springdoc 里。
+                 它传递进来的 2.3.0 与 Spring 6.2 不兼容（见上方 springdoc.version 注释），这里统一顶到 2.8.17。
+                 三个 starter 都要钉：common 是内核，webmvc-api 出 /v3/api-docs，webmvc-ui 出 swagger-ui 静态资源。 -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-common</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+            <!-- swagger 三件套必须同版本：core 里大量引用 models / annotations 的类和方法，
+                 混版本就是下一个 NoSuchMethodError 的来源。 -->
+            <dependency>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-annotations-jakarta</artifactId>
+                <version>${swagger-api.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-models-jakarta</artifactId>
+                <version>${swagger-api.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-core-jakarta</artifactId>
+                <version>${swagger-api.version}</version>
             </dependency>
             <!--腾讯云-->
             <dependency>
