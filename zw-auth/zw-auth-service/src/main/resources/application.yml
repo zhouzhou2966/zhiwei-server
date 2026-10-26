@@ -26,7 +26,11 @@ encrypt:
     # 凭据（password / secret）不写进代码仓库，
     # 见 Nacos public 命名空间的 auth-service.yaml
     alias: zw  #别名
-    location: classpath:zw.jks  #KeyStore 证书库名称
+    # 这里**不能**再配 location。密钥库本体走 Nacos 的 zw.auth.jks-base64（见 AuthConfig），
+    # 而 spring-cloud-context 的 DecryptEnvironmentPostProcessor 只要看到
+    # encrypt.key-store.location 就会去加载它，加载不到直接抛 Invalid keystore location，
+    # 根本走不到 AuthConfig 里读 base64 的那段。zw.jks 按「凭据不入库」已从仓库移除，
+    # 本地可能还留着残留文件所以能跑，构建机从 Gitee 拉代码构建出的 jar 里没有它，必挂。
     password: 
     secret: 
 zw:
