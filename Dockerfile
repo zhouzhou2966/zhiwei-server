@@ -1,7 +1,9 @@
 # JDK 17 是硬要求：Boot 3.5 的产物是 class file version 61，JDK 11 只认到 55，启动即 UnsupportedClassVersionError。
-# eclipse-temurin 是 Adoptium 的官方镜像（替代已停止维护的 openjdk 官方镜像）。
-# 若构建环境拉不到 Docker Hub，可换成本地仓库里的等价 17-jre 镜像，或 openjdk:17-jre。
-FROM eclipse-temurin:17-jre
+# 基础镜像用本地自建的 zhiwei-jre17：这台构建机连不上 Docker Hub（registry-1.docker.io 超时，
+# 阿里云加速器也已停服），只能用本地已有的 openjdk:11 镜像 + 离线 JDK 17 包拼一个出来。
+# 自建方式见 docker/base-jre17/Dockerfile，执行一次即可。
+# 在有外网的环境里，把这一行换回 FROM eclipse-temurin:17-jre 行为等价。
+FROM zhiwei-jre17:17
 LABEL maintainer="zhiwei"
 ENV JAVA_OPTS=""
 # 设定时区

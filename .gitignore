@@ -25,3 +25,6 @@ job
 # 密钥库不入库（本地需自行生成）
 *.jks
 *.p12
+
+# 自建基础镜像用的离线 JDK 包（185MB，不入库）
+docker/base-jre17/*.tar.gz
