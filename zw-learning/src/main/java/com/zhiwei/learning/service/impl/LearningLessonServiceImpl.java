@@ -259,9 +259,16 @@ public class LearningLessonServiceImpl extends ServiceImpl<LearningLessonMapper,
         Set<Long> cIds = records.stream().map(LearningLesson::getCourseId).collect(Collectors.toSet());
         /// 根据课程ID列表获取课程基本信息
         List<CourseSimpleInfoDTO> courseInfoList = courseClient.getSimpleInfoList(cIds);
-        // 如果课程信息为空，抛出异常
+        // 课程信息为空时返回空 Map，绝不能抛异常。
+        // 两种场景都会走到这里，都不该让整个接口 500：
+        //   ① 用户学过的课全被逻辑删除 —— course-service 的 getSimpleInfoList 是 WHERE id IN (...)，
+        //      已删除的课直接不返回，结果就是空列表。这是正常业务状态，应该返回「暂无课程」。
+        //      原来这里 throw BadRequestException，把「课程全删」这种正常情况也打成了 500。
+        //   ② course-service 不可用 —— CourseClientFallback 降级返回空列表。
+        // 下游 queryMyLessons(约 175 行) / queryMyPlans(约 486 行) 都有 if (cInfo != null) 判空，
+        // 拿到空 Map 只会让课程名/封面为空，学习进度和列表本身照常返回。
         if (CollUtils.isEmpty(courseInfoList)) {
-            throw new BadRequestException("课程数据为空！");
+            return new HashMap<>();
         }
         // 将课程信息列表转换为Map，以课程ID为键
         Map<Long, CourseSimpleInfoDTO> map = courseInfoList

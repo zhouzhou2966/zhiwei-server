@@ -1,5 +1,6 @@
 package com.zhiwei.api.client.course;
 
+import com.zhiwei.api.client.course.fallback.CatalogueClientFallback;
 import com.zhiwei.api.dto.course.CataSimpleInfoDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -7,7 +8,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(contextId = "catalogue", value = "course-service",path = "catalogues")
+// 与 CourseClient 打同一个 course-service，必须一起降级：
+// getNowLesson 取完课程信息还要查「学到第几节」，只降 CourseClient 这里照样抛异常。
+@FeignClient(contextId = "catalogue", value = "course-service", path = "catalogues",
+        fallbackFactory = CatalogueClientFallback.class)
 public interface CatalogueClient {
 
     /**

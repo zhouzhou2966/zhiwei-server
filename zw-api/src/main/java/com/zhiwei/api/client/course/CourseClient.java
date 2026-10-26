@@ -1,5 +1,6 @@
 package com.zhiwei.api.client.course;
 
+import com.zhiwei.api.client.course.fallback.CourseClientFallback;
 import com.zhiwei.api.dto.course.*;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -8,7 +9,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(contextId = "course", value = "course-service")
+// fallbackFactory 不是可选项：course 是课程主数据唯一来源，没有它 course 一挂，
+// 学习中心的 getNowLesson / queryMyLessons / queryMyPlans 全部 500（整页空白）。
+// 降级后调用方已有的 if (cInfo != null) 判空就能生效，退化成「卡片没有课程名」。
+// 注：Sentinel 的 fallbackFactory 对所有 Throwable 生效，不只限流熔断 ——
+// 见 SentinelInvocationHandler 的 catch (Throwable) 分支。
+@FeignClient(contextId = "course", value = "course-service", fallbackFactory = CourseClientFallback.class)
 public interface CourseClient {
 
     /**
