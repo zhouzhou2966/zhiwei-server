@@ -79,25 +79,39 @@ public class SearchServiceImpl implements ISearchService {
     }
 
     private List<CourseVO> queryTopNCourseOnMarketByFree(boolean isFree, String sortBy) {
-        // 1.获取当前用户
+        // 1.本栏目标数：topNumber 是「最多取几条」，不是「保证几条」，后面要自己补足
+        int n = interestsProperties.getTopNumber();
+        // 2.获取当前用户
         Long id = UserContext.getUserId();
-        // 2.查询课程
-        List<CourseVO> courses = null;
         if (id == null) {
             // 3.未登录，直接查询报名人数最多的
-            courses = queryTopNByCategoryIdLv2sAndFree(
-                    null, isFree, sortBy, false, interestsProperties.getTopNumber());
-        } else {
-            // 4.已登录，根据兴趣爱好查询
-            List<Long> categoryIds = interestsService.queryMyInterestsIds();
-            if (CollUtils.isEmpty(categoryIds)) {
-                // 4.1.没有兴趣爱好，直接查询报名人数最多的
-                courses = queryTopNByCategoryIdLv2sAndFree(
-                        null, isFree, sortBy, false, interestsProperties.getTopNumber());
-            } else {
-                // 4.2.有爱好.查询爱好课程中报名人数最多的
-                courses = queryTopNByCategoryIdLv2sAndFree(
-                        categoryIds, isFree, sortBy, false, interestsProperties.getTopNumber());
+            return queryTopNByCategoryIdLv2sAndFree(null, isFree, sortBy, false, n);
+        }
+        // 4.已登录，先看有没有兴趣爱好
+        List<Long> categoryIds = interestsService.queryMyInterestsIds();
+        if (CollUtils.isEmpty(categoryIds)) {
+            // 4.1.没有兴趣爱好，直接查询报名人数最多的
+            return queryTopNByCategoryIdLv2sAndFree(null, isFree, sortBy, false, n);
+        }
+        // 4.2.有爱好：兴趣分类下的课程优先
+        List<CourseVO> courses = new ArrayList<>(
+                queryTopNByCategoryIdLv2sAndFree(categoryIds, isFree, sortBy, false, n));
+        if (courses.size() >= n) {
+            return courses;
+        }
+        // 4.3.兴趣池不够 n 条，用全站榜补齐（按 id 去重），保证这一栏永远满 n 条。
+        //     为什么必须补：兴趣分类本身课程就少，再叠加 isFree 条件很容易只剩 2~3 条
+        //     （例：兴趣只命中 4 门课，其中 1 门免费，而 best/new 要求 isFree=false ⇒ 只剩 3 条），
+        //     结果就是「登录后首页比未登录还少一张卡」，用户会当成 bug。
+        //     排序口径不变：先兴趣课、后全站课，各自内部仍按 sortBy 倒序。
+        Set<Long> existIds = courses.stream().map(CourseVO::getId).collect(Collectors.toSet());
+        // 多取一倍，抵消去重带来的损耗
+        for (CourseVO c : queryTopNByCategoryIdLv2sAndFree(null, isFree, sortBy, false, n * 2)) {
+            if (courses.size() >= n) {
+                break;
+            }
+            if (existIds.add(c.getId())) {
+                courses.add(c);
             }
         }
         return courses;
