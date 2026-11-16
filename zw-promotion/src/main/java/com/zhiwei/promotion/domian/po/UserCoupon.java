@@ -45,6 +45,13 @@ public class UserCoupon implements Serializable {
     private Long couponId;
 
     /**
+     * 领取请求唯一标识，用于 MQ 消费幂等。
+     * <p>幂等粒度必须是「一次领取请求」，不能是「用户 + 券」：
+     * user_limit 允许同一用户领多张同款券，用后者做幂等键会把合法领取误判成重复投递。</p>
+     */
+    private String requestId;
+
+    /**
      * 优惠券有效期开始时间
      */
     private LocalDateTime termBeginTime;

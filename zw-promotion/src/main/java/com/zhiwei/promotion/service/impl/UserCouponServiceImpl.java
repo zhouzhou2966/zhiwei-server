@@ -1,6 +1,5 @@
 package com.zhiwei.promotion.service.impl;
 
-import cn.hutool.core.bean.copier.CopyOptions;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -17,6 +16,7 @@ import com.zhiwei.common.utils.CollUtils;
 import com.zhiwei.common.utils.JsonUtils;
 import com.zhiwei.common.utils.NumberUtils;
 import com.zhiwei.common.utils.UserContext;
+import com.zhiwei.promotion.cache.CouponCacheManager;
 import com.zhiwei.promotion.constants.PromotionConstants;
 import com.zhiwei.promotion.domian.UserCouponDTO;
 import com.zhiwei.promotion.domian.po.Coupon;
@@ -24,12 +24,14 @@ import com.zhiwei.promotion.domian.po.ExchangeCode;
 import com.zhiwei.promotion.domian.po.UserCoupon;
 import com.zhiwei.promotion.domian.query.UserCouponQuery;
 import com.zhiwei.promotion.domian.vo.CouponVO;
+import com.zhiwei.promotion.enums.CouponStatus;
 import com.zhiwei.promotion.enums.ExchangeCodeStatus;
 import com.zhiwei.promotion.enums.ObtainType;
 import com.zhiwei.promotion.enums.UserCouponStatus;
 import com.zhiwei.promotion.mapper.CouponMapper;
 import com.zhiwei.promotion.mapper.UserCouponMapper;
 import com.zhiwei.promotion.service.IExchangeCodeService;
+import com.zhiwei.promotion.service.ICouponScopeService;
 import com.zhiwei.promotion.service.IUserCouponService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.zhiwei.promotion.strategy.discount.DiscountStrategy;
@@ -59,6 +61,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static com.zhiwei.common.constants.MqConstants.Exchange.PROMOTION_EXCHANGE;
@@ -80,8 +83,10 @@ import static com.zhiwei.promotion.constants.PromotionConstants.*;
 public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCoupon> implements IUserCouponService {
     private final CouponMapper couponMapper;
     private final IExchangeCodeService exchangeCodeService;
+    private final ICouponScopeService couponScopeService;
     private final StringRedisTemplate redisTemplate;
     private final RabbitMqHelper rabbitMqHelper;
+    private final CouponCacheManager couponCacheManager;
     private static final RedisScript<Long> RECEIVE_COUPON_SCRIPT;
     private static final RedisScript<String> EXCHANGE_COUPON_SCRIPT;
     private static final RedisScript<Long> ROLLBACK_RECEIVE_COUPON_SCRIPT;
@@ -96,6 +101,13 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
      * 幂等键有效期。只需覆盖「消息可能被重投」的窗口，24 小时足够。
      */
     private static final Duration DEDUP_KEY_TTL = Duration.ofHours(24);
+
+    /**
+     * 缓存重建时，没抢到锁的线程的等待时长。
+     * <p>重建临界区只有一次 selectById + 一次 HSET，正常在毫秒级完成；
+     * 50ms 足够覆盖，同时不会让用户在领券页干等。</p>
+     */
+    private static final long REBUILD_WAIT_MS = 50L;
 
     static {
         RECEIVE_COUPON_SCRIPT = RedisScript.of(new ClassPathResource("lua/receive_coupon.lua"), Long.class);
@@ -123,9 +135,8 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         // 1.1.准备参数
         String key1 = COUPON_CACHE_KEY_PREFIX + couponId;
         String key2 = USER_COUPON_CACHE_KEY_PREFIX + couponId;
-        // 1.2.执行脚本
-        Long r = redisTemplate.execute(RECEIVE_COUPON_SCRIPT, List.of(key1, key2), userId.toString());
-        int result = NumberUtils.null2Zero(r).intValue();
+        // 1.2.执行脚本（命中「缓存不存在」时回源 DB 重建缓存再重试一次）
+        int result = receiveWithCacheRepair(couponId, userId, key1, key2);
         if (result != 0) {
             throw new BizIllegalException(PromotionConstants.RECEIVE_COUPON_ERROR_MSG[result - 1]);
         }
@@ -133,6 +144,9 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         UserCouponDTO uc = new UserCouponDTO();
         uc.setUserId(userId);
         uc.setCouponId(couponId);
+        // 每次领取请求一个独立幂等标识：user_limit 允许同一用户领多张同款券，
+        // 幂等键如果只用「用户 + 券」，第二张在消费端会被当成重复消息丢掉。
+        uc.setRequestId(UUID.randomUUID().toString());
         try {
             boolean send = rabbitMqHelper.send(PROMOTION_EXCHANGE, COUPON_RECEIVE_KEY, uc);
             if (!send) throw new RuntimeException("MQ发送失败");
@@ -154,11 +168,62 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         throw new BizIllegalException("当前领券人数过多，请稍后再试");
     }
 
-    private Coupon queryCouponByCache(Long couponId) {
-        String key = COUPON_CACHE_KEY_PREFIX + couponId;
-        Map<Object, Object> map = redisTemplate.opsForHash().entries(key);
-        if (CollUtils.isEmpty(map)) return null;
-        return BeanUtils.mapToBean(map, Coupon.class, false, CopyOptions.create());
+    /**
+     * 执行领券 Lua。缓存不存在（错误码 1）时回源 DB 重建缓存，然后重试一次。
+     * <p>
+     * 「优惠券不存在」这个文案过去由 Lua 的 {@code exists prs:coupon:{id}} 直接决定，
+     * 但它只能证明 Redis 里没有库存缓存，证明不了 DB 里没有这张券。Redis 重启、
+     * key 被驱逐、状态被绕过接口改动（手工 SQL 把 status 改成发放中）都会命中这一支，
+     * 表现就是「列表里看得到、点领取说券不存在」，且不会自愈。
+     * </p>
+     * <p>
+     * 这里把错误码 1 拆成两种真实含义：DB 里确实不可领（返回 1，文案正确），
+     * 或者只是缓存缺失（重建后重跑，用户无感）。DB 侧的
+     * {@code issue_num < total_num} 原子校验和 {@code user_coupon} 唯一索引仍然是
+     * 最终防线，所以重建不会造成超发。
+     * </p>
+     */
+    private int receiveWithCacheRepair(Long couponId, Long userId, String key1, String key2) {
+        int result = runReceiveScript(key1, key2, userId);
+        if (result != 1) return result;
+
+        if (!couponCacheManager.tryLockRebuild(couponId)) {
+            // 已有线程在重建：等它完成再重试，避免并发重建互相覆盖库存。
+            // 临界区只有一次 selectById + 一次 HSET，50ms 足够；仍失败就按原错误码返回。
+            sleepQuietly(REBUILD_WAIT_MS);
+            return runReceiveScript(key1, key2, userId);
+        }
+        try {
+            Coupon coupon = couponMapper.selectById(couponId);
+            if (coupon == null || coupon.getStatus() != CouponStatus.ISSUING) {
+                // 真的不可领：DB 都没有，或已结束/暂停/未开始 —— 保持「优惠券不存在」的原语义
+                return 1;
+            }
+            couponCacheManager.preheat(coupon);
+            log.warn("[COUPON-REBUILD] 库存缓存缺失，已按 DB 重建：couponId={}, totalNum={}, issueNum={}",
+                    couponId, coupon.getTotalNum(), coupon.getIssueNum());
+        } catch (Exception e) {
+            // 重建失败（DB 抖动等）不能改变对外语义，但必须留痕，否则又变成静默故障
+            log.error("[COUPON-REBUILD] 缓存重建失败：couponId={}", couponId, e);
+            return 1;
+        } finally {
+            couponCacheManager.releaseRebuildLock(couponId);
+        }
+        return runReceiveScript(key1, key2, userId);
+    }
+
+    private int runReceiveScript(String key1, String key2, Long userId) {
+        Long r = redisTemplate.execute(RECEIVE_COUPON_SCRIPT, List.of(key1, key2), userId.toString());
+        return NumberUtils.null2Zero(r).intValue();
+    }
+
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            // 恢复中断标记，让上层能感知到取消信号
+            Thread.currentThread().interrupt();
+        }
     }
 
 
@@ -171,29 +236,34 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
             throw new BadRequestException("领券消息缺少 userId 或 couponId");
         }
         // 1. SETNX 幂等闸门
-        //    键用「业务唯一键」而不是 messageId：
-        //    ① messageId 是传输层概念，重发、改延迟重投后每次都会变，挡不住重复消费；
-        //    ② 一次领取业务天然对应一条 (userId, couponId)，用它做键语义才对。
-        //    messageId 只留在日志里，便于排查具体是哪条消息。
-        String dedupKey = DEDUP_KEY_PREFIX + uc.getUserId() + ":" + uc.getCouponId();
+        //    键用「一次领取请求」而不是「用户 + 券」：
+        //    ① user_limit 本来就允许同一用户领多张同款券，用 (userId, couponId) 做键，
+        //       第二张合法领取会被当成重复投递直接 return —— 而 Lua 那边库存和计数已经扣了，
+        //       结果就是「静默丢券」：用户看到兑换成功，列表里却没有券，日志也查不出东西。
+        //    ② 幂等要挡的是「同一条消息被消费两次」，所以键必须按请求区分。
+        //    requestId 为空时退回老的 (userId, couponId)，兼容滚动升级期间还在队列里的旧消息。
+        String requestKey = uc.getRequestId() == null ? "legacy" : uc.getRequestId();
+        String dedupKey = DEDUP_KEY_PREFIX + uc.getUserId() + ":" + uc.getCouponId() + ":" + requestKey;
         Boolean first = redisTemplate.opsForValue().setIfAbsent(dedupKey, "1", DEDUP_KEY_TTL);
         if (Boolean.FALSE.equals(first)) {
             // 键存在只能说明「处理过」，不能说明「处理成功」：
             // 消费中途进程被 kill（发布重启、OOM）时 key 会原样残留 24 小时，消息重投后如果直接
             // return，就会出现「Redis 库存已扣、DB 没记录、也没人回滚」的静默丢券，且日志里查不到。
-            // 所以这里必须回查一次 DB 才能下结论 —— 有记录才是真的处理过。
-            Long exists = lambdaQuery()
-                    .eq(UserCoupon::getUserId, uc.getUserId())
-                    .eq(UserCoupon::getCouponId, uc.getCouponId())
-                    .count();
+            // 所以这里必须回查一次 DB —— 有记录才是真的处理过。
+            // 回查也必须按 requestId 精确查：按 (userId, couponId) 查会把「用户早先领过一张」
+            // 误判成「这次请求已处理」，那正是下面第 ① 条要避免的错。
+            Long exists = uc.getRequestId() == null
+                    ? lambdaQuery().eq(UserCoupon::getUserId, uc.getUserId())
+                        .eq(UserCoupon::getCouponId, uc.getCouponId()).count()
+                    : lambdaQuery().eq(UserCoupon::getRequestId, uc.getRequestId()).count();
             if (exists != null && exists > 0) {
-                log.info("重复消息，DB 已有领取记录，跳过：userId={}, couponId={}, messageId={}",
-                        uc.getUserId(), uc.getCouponId(), messageId);
+                log.info("重复消息，本请求已有落库记录，跳过：userId={}, couponId={}, requestId={}, messageId={}",
+                        uc.getUserId(), uc.getCouponId(), uc.getRequestId(), messageId);
                 return;
             }
             // DB 没记录 = 上次处理到一半中断了（事务已回滚，issue_num 也一起回滚），继续往下走是安全的
-            log.warn("幂等键命中但 DB 无记录，判定为上次处理中断，继续处理：userId={}, couponId={}, messageId={}",
-                    uc.getUserId(), uc.getCouponId(), messageId);
+            log.warn("幂等键命中但 DB 无记录，判定为上次处理中断，继续处理：userId={}, couponId={}, requestId={}, messageId={}",
+                    uc.getUserId(), uc.getCouponId(), uc.getRequestId(), messageId);
         }
         try {
             // 2. 校验优惠券是否存在
@@ -204,12 +274,14 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
             if (result <= 0) throw new BadRequestException("优惠券已发放完毕");
             // 4. 保存用户领取记录
             try {
-                saveUserCoupon(uc.getUserId(), coupon);
+                saveUserCoupon(uc.getUserId(), coupon, uc.getRequestId());
             } catch (DuplicateKeyException e) {
-                // user_coupon 上有唯一索引 (user_id, coupon_id)，一人一张模板只能有一条记录。
-                // 用户已经领过时属于业务性失败：转成 BizIllegalException 让外层直接回滚 Redis，
-                // 否则会当成系统异常重试 3 次才回滚，用户白等 700ms 还看到「系统错误」。
-                throw new BizIllegalException("您已领取过该优惠券");
+                // 唯一索引 uk_user_coupon_request(request_id) 兜底：同一个 requestId 只能落一条。
+                // 走到这里说明这条请求已经成功落过库了，抛业务异常让事务回滚（把本次多扣的
+                // issue_num 退回去），外层再回滚 Redis。
+                // ⚠️ 注意这里不再是「您已领取过该优惠券」：user_limit 允许重复领取，
+                //    「用户已持有该券」不再是失败条件。
+                throw new BizIllegalException("该领取请求已处理，请勿重复提交");
             }
             // 5. 若是兑换码方式领取，更新兑换码状态为已使用
             if (coupon.getObtainWay() == ObtainType.ISSUE && uc.getCodeId() != null) {
@@ -246,11 +318,13 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         });
     }
 
-    private void saveUserCoupon(Long userId, Coupon coupon) {
+    private void saveUserCoupon(Long userId, Coupon coupon, String requestId) {
         // 1. 构建用户优惠券记录
         UserCoupon userCoupon = new UserCoupon();
         userCoupon.setCouponId(coupon.getId());
         userCoupon.setUserId(userId);
+        // 幂等标识跟着落库，唯一索引 uk_user_coupon_request 兜底「同一请求只落一条」
+        userCoupon.setRequestId(requestId);
         // 2. 计算优惠券有效期
         LocalDateTime termBeginTime = coupon.getTermBeginTime();
         LocalDateTime termEndTime = coupon.getTermEndTime();
@@ -289,6 +363,9 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         uc.setUserId(userId);
         uc.setCouponId(couponId);
         uc.setCodeId(serialNum);
+        // 兑换码本身就是一次唯一的领取请求，序列号天然可做幂等键；
+        // 重投时值不变，能挡住重复消费，又不会影响用户之后再领同款券。
+        uc.setRequestId("exchange:" + serialNum);
         try {
             boolean send = rabbitMqHelper.send(PROMOTION_EXCHANGE, COUPON_RECEIVE_KEY, uc);
             if (!send) throw new RuntimeException("MQ发送失败");
@@ -359,6 +436,12 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
                 .collect(Collectors.toSet());
         Map<Long, Coupon> couponMap = couponMapper.selectBatchIds(couponIds).stream()
                 .collect(Collectors.toMap(Coupon::getId, c -> c));
+        // 限定范围的券带上分类id，前端才能显示「限 Java进阶」而不是一句「指定分类」
+        List<Long> specificIds = couponMap.values().stream()
+                .filter(c -> Boolean.TRUE.equals(c.getSpecific()))
+                .map(Coupon::getId)
+                .collect(Collectors.toList());
+        Map<Long, List<Long>> scopeMap = couponScopeService.mapCategoryIdsByCouponIds(specificIds);
         // 4.按分页记录的顺序组装 VO
         //   注意：selectBatchIds 返回顺序不确定，不能直接拿它当结果集，否则前端卡片顺序会乱
         List<CouponVO> list = records.stream()
@@ -372,6 +455,9 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
                     vo.setTermBeginTime(uc.getTermBeginTime());
                     vo.setTermEndTime(uc.getTermEndTime());
                     vo.setUserCouponId(uc.getId());
+                    if (Boolean.TRUE.equals(coupon.getSpecific())) {
+                        vo.setScopeCategoryIds(scopeMap.getOrDefault(coupon.getId(), Collections.emptyList()));
+                    }
                     // 对外状态按「时间语义」归一化：库里仍是 UNUSED 但已过期的券，
                     // 在「已过期」Tab 里要报 EXPIRED，否则前端按状态渲染时会出现
                     // 「已过期 Tab 里的券标着未使用」这种自相矛盾的展示。
@@ -566,9 +652,21 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
                         couponId, issueNum, dbCount);
                 driftIds.add(couponId);
             }
-            // 2. Redis 口径对账：缓存剩余 = 总量 - 已发放（缓存不存在说明已回收，跳过）
+            // 2. Redis 口径对账：缓存剩余 = 总量 - 已发放
+            //    「缓存不存在」必须按状态分开看：
+            //    已结束/暂停的券缓存早该被回收，跳过是对的；
+            //    但发放中的券缺缓存是异常 —— 领券 Lua 第一步就是 exists 这个 key，
+            //    缺了会让用户在列表里看得到券、点领取却提示「优惠券不存在」，
+            //    而且这张券状态不会再变、issueCouponJob 只捞 status=2 也带不动它，
+            //    过去正是被这里一句 continue 放过去了，所以必须计入漂移。
             Object redisTotal = redisTemplate.opsForHash().get(COUPON_CACHE_KEY_PREFIX + couponId, "totalNum");
-            if (redisTotal == null) continue;
+            if (redisTotal == null) {
+                if (coupon.getStatus() == CouponStatus.ISSUING) {
+                    log.error("[COUPON-DRIFT] 发放中的券缺少库存缓存，领券会提示「优惠券不存在」：couponId={}", couponId);
+                    driftIds.add(couponId);
+                }
+                continue;
+            }
             int expect = NumberUtils.null2Zero(coupon.getTotalNum()) - issueNum;
             int actual;
             try {
