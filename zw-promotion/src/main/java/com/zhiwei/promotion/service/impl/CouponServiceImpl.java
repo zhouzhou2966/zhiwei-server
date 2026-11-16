@@ -264,6 +264,9 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, Coupon> impleme
             // 而 NPE 会让整个列表接口 500（一张脏数据打翻整页），这里按 0 兜底
             long owned = totalMap.getOrDefault(c.getId(), 0L);
             int userLimit = NumberUtils.null2Zero(c.getUserLimit());
+            // 与 CouponCacheManager#preheat 保持一致：0/null 一律按 1 处理，
+            // 否则列表会显示「已领完」而 Lua 里其实永远领不了（curCount >= 0 恒真），两边口径对不上
+            if (userLimit <= 0) userLimit = 1;
             boolean soldOut = NumberUtils.null2Zero(c.getIssueNum()) >= NumberUtils.null2Zero(c.getTotalNum());
             // 还能领几张：前端要据此显示「还可领 2 张」，光给一个 available 布尔值
             // 会让 userLimit>1 的券在领到第一张后看着像「已经领过了」

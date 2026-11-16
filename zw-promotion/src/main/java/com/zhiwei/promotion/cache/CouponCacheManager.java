@@ -72,6 +72,9 @@ public class CouponCacheManager {
         int issueNum = NumberUtils.null2Zero(coupon.getIssueNum());
         int remain = Math.max(totalNum - issueNum, 0);
         int userLimit = NumberUtils.null2Zero(coupon.getUserLimit());
+        // 限额必须 >= 1。配成 0 或 null 时 Lua 里 `curCount >= 0` 恒真，这张券会永远领不了，
+        // 而且报的是「超出领取数量」—— 运营完全看不出是配置问题。
+        if (userLimit <= 0) userLimit = 1;
         int obtainWay = coupon.getObtainWay() == null
                 ? ObtainType.PUBLIC.getValue() : coupon.getObtainWay().getValue();
 

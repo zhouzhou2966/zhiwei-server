@@ -117,6 +117,12 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
      */
     private static final long EXCHANGE_CODE_RANGE = 5000L;
 
+    /**
+     * 领券 Lua 的错误码 4：超出领取数量。
+     * <p>拿到它时不能直接抛异常，要先确认是真到限还是计数丢了（见 repairUserCounterIfMissing）。</p>
+     */
+    private static final int RECEIVE_LIMIT_REACHED = 4;
+
     static {
         RECEIVE_COUPON_SCRIPT = RedisScript.of(new ClassPathResource("lua/receive_coupon.lua"), Long.class);
         EXCHANGE_COUPON_SCRIPT = RedisScript.of(new ClassPathResource("lua/exchange_coupon.lua"), String.class);
@@ -145,6 +151,9 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         String key2 = USER_COUPON_CACHE_KEY_PREFIX + couponId;
         // 1.2.执行脚本（命中「缓存不存在」时回源 DB 重建缓存再重试一次）
         int result = receiveWithCacheRepair(couponId, userId, key1, key2);
+        if (result == RECEIVE_LIMIT_REACHED) {
+            result = repairUserCounterIfMissing(couponId, userId, key1, key2);
+        }
         if (result != 0) {
             throw new BizIllegalException(PromotionConstants.RECEIVE_COUPON_ERROR_MSG[result - 1]);
         }
@@ -225,6 +234,39 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
     private int runReceiveScript(String key1, String key2, Long userId) {
         Long r = redisTemplate.execute(RECEIVE_COUPON_SCRIPT, List.of(key1, key2), userId.toString());
         return NumberUtils.null2Zero(r).intValue();
+    }
+
+    /**
+     * 错误码 4（超出领取数量）时的一次自愈尝试。
+     *
+     * <p>用户领取计数在 {@code prs:user:coupon:{couponId}} 这个 hash 里，没有 TTL，
+     * 但 Redis 重启 / FLUSHDB 会把它整块丢掉。丢掉的后果不是报错而是「限额失效」：
+     * 计数归零后同一个人可以再领 userLimit 张。券缓存丢了还能靠错误码 1 回源重建，
+     * 用户计数一直没有对应的入口。</p>
+     *
+     * <p><b>只在「这个用户的字段完全不存在」时补写</b>，字段存在但数值和 DB 不一致时不动：
+     * 那种差值通常来自「Lua 已 +1、MQ 还没落库」的在途窗口，按 DB 覆盖会让用户多领一张。
+     * 也就是说这里只修「整块丢了」，不修「正在飞的那一张」。</p>
+     */
+    private int repairUserCounterIfMissing(Long couponId, Long userId, String key1, String key2) {
+        Object cached = redisTemplate.opsForHash().get(key2, userId.toString());
+        if (cached != null) {
+            // 计数还在，说明是真到限
+            return RECEIVE_LIMIT_REACHED;
+        }
+        long owned = lambdaQuery()
+                .eq(UserCoupon::getUserId, userId)
+                .eq(UserCoupon::getCouponId, couponId)
+                .count();
+        if (owned <= 0) {
+            // DB 里也没有领取记录，那不是「丢了」而是配置或数据异常（例如 userLimit 配成 0），
+            // 保持原错误码，不要凭空造一个计数出来
+            return RECEIVE_LIMIT_REACHED;
+        }
+        redisTemplate.opsForHash().put(key2, userId.toString(), String.valueOf(owned));
+        log.warn("[COUPON-COUNTER-REPAIR] 用户领取计数缺失，已按 DB 重建：couponId={}, userId={}, count={}",
+                couponId, userId, owned);
+        return runReceiveScript(key1, key2, userId);
     }
 
     private void sleepQuietly(long millis) {
