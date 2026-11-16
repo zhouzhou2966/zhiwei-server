@@ -6,6 +6,7 @@ import com.zhiwei.promotion.domian.po.Coupon;
 import com.zhiwei.promotion.domian.po.UserCoupon;
 import com.zhiwei.promotion.domian.query.UserCouponQuery;
 import com.zhiwei.promotion.domian.vo.CouponVO;
+import com.zhiwei.promotion.domian.vo.ExchangePreviewVO;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.util.List;
@@ -24,6 +25,12 @@ public interface IUserCouponService extends IService<UserCoupon> {
 
     // 兑换优惠券
     void exchangeCoupon(String code);
+
+    /**
+     * 兑换码预检：告诉用户这张码换的是什么券、现在能不能兑。
+     * 只读，不写 Redis、不占名额、不动库存。
+     */
+    ExchangePreviewVO previewExchange(String code);
 
     // 分页查询我的优惠券（按状态过滤：未使用/已使用/已过期）
     PageDTO<CouponVO> queryMyCouponPage(UserCouponQuery query);

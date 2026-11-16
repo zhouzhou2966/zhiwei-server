@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Schema(description = "用户端优惠券信息")
@@ -15,6 +16,13 @@ public class CouponVO {
     private String name;
     @Schema(description = "是否限定使用范围")
     private Boolean specific;
+    /**
+     * 限定范围要透给前端，否则页面只能写死一句「指定课程」，
+     * 用户看不出这张券到底能用在哪些分类上 —— 而这正是他决定领不领的依据。
+     * 只返回分类id，名称由前端用分类树（/cs/categorys/all）本地映射，避免跨服务调用。
+     */
+    @Schema(description = "限定的三级分类id列表，specific=true 时返回")
+    private List<Long> scopeCategoryIds;
 
     @Schema(description = "优惠券类型，1：每满减，2：折扣，3：无门槛，4：普通满减")
     private DiscountType discountType;

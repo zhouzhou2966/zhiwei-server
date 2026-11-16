@@ -5,6 +5,7 @@ import com.zhiwei.common.domain.dto.PageDTO;
 import com.zhiwei.common.exceptions.BadRequestException;
 import com.zhiwei.common.exceptions.BizIllegalException;
 import com.zhiwei.common.utils.*;
+import com.zhiwei.promotion.cache.CouponCacheManager;
 import com.zhiwei.promotion.constants.PromotionConstants;
 import com.zhiwei.promotion.domian.dto.CouponFormDTO;
 import com.zhiwei.promotion.domian.dto.CouponIssueFormDTO;
@@ -27,20 +28,15 @@ import com.zhiwei.promotion.service.IExchangeCodeService;
 import com.zhiwei.promotion.service.IUserCouponService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-
-import static com.zhiwei.promotion.constants.PromotionConstants.COUPON_CACHE_KEY_PREFIX;
-import static com.zhiwei.promotion.constants.PromotionConstants.USER_COUPON_CACHE_KEY_PREFIX;
 
 /**
  * <p>
@@ -57,7 +53,7 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, Coupon> impleme
     private final ICouponScopeService couponScopeService;
     private final IExchangeCodeService exchangeCodeService;
     private final IUserCouponService userCouponService;
-    private final StringRedisTemplate redisTemplate;
+    private final CouponCacheManager couponCacheManager;
 
     @Override
     @Transactional
@@ -127,48 +123,18 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, Coupon> impleme
 
     /**
      * 预热优惠券缓存（领券 Lua 的唯一数据源）
-     * <p>两个关键点：</p>
-     * <ul>
-     *   <li>库存写的是<b>剩余可领数量</b>（totalNum - issueNum），不是总量。
-     *       否则「暂停后重新发放」时 Redis 会多放出已发出去的那部分，DB 侧
-     *       {@code issue_num < total_num} 会拦住，用户看到的是「已发放完毕」而不是成功。</li>
-     *   <li>写入 obtainWay，让 Lua 能拒绝「兑换码专属券走手动领取接口」。</li>
-     * </ul>
+     * <p>实现已下沉到 {@link com.zhiwei.promotion.cache.CouponCacheManager}：
+     * 领券链路在缓存缺失时也要能回源重建，而它不能反向依赖本类（构造器循环依赖），
+     * 所以写入逻辑必须放在双方都能注入的组件里。这里只保留接口签名。</p>
      */
     @Override
     public void preheatCouponCache(Coupon coupon) {
-        if (coupon == null || coupon.getId() == null) return;
-        int totalNum = NumberUtils.null2Zero(coupon.getTotalNum());
-        int issueNum = NumberUtils.null2Zero(coupon.getIssueNum());
-        int remain = Math.max(totalNum - issueNum, 0);
-        int userLimit = NumberUtils.null2Zero(coupon.getUserLimit());
-        int obtainWay = coupon.getObtainWay() == null
-                ? ObtainType.PUBLIC.getValue() : coupon.getObtainWay().getValue();
-
-        Map<String, String> map = new HashMap<>(8);
-        map.put("issueBeginTime", String.valueOf(DateUtils.toEpochMilli(coupon.getIssueBeginTime())));
-        map.put("issueEndTime", String.valueOf(DateUtils.toEpochMilli(coupon.getIssueEndTime())));
-        map.put("totalNum", String.valueOf(remain));
-        map.put("userLimit", String.valueOf(userLimit));
-        map.put("obtainWay", String.valueOf(obtainWay));
-
-        String key = COUPON_CACHE_KEY_PREFIX + coupon.getId();
-        redisTemplate.opsForHash().putAll(key, map);
-        // TTL 取「发放结束时间 + 7 天」：既保证发放期内计数不会提前过期，
-        // 又能在活动结束后自动回收，避免 key 永久驻留
-        if (coupon.getIssueEndTime() != null) {
-            long seconds = Duration.between(LocalDateTime.now(), coupon.getIssueEndTime().plusDays(7)).getSeconds();
-            if (seconds > 0) {
-                redisTemplate.expire(key, Duration.ofSeconds(seconds));
-            }
-        }
+        couponCacheManager.preheat(coupon);
     }
 
     @Override
     public void removeCouponCache(Long couponId) {
-        if (couponId == null) return;
-        redisTemplate.delete(COUPON_CACHE_KEY_PREFIX + couponId);
-        redisTemplate.delete(USER_COUPON_CACHE_KEY_PREFIX + couponId);
+        couponCacheManager.evict(couponId);
     }
 
 
@@ -243,16 +209,25 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, Coupon> impleme
             log.error("优惠券暂停失败:{}", coupon);
         }
         log.info("优惠券暂停成功,id:{}", id);
-        // 删除缓存，防止缓存数据与数据库数据不一致
-        redisTemplate.delete(COUPON_CACHE_KEY_PREFIX + id);
+        // 删除券缓存，防止缓存数据与数据库数据不一致。
+        // 只删券缓存、保留用户领取计数：恢复发放后限领额度必须还在，否则用户会多出一次领取机会
+        couponCacheManager.evictCouponOnly(id);
     }
 
 
     @Override
     public List<CouponVO> queryIssuingCoupons() {
+        LocalDateTime now = LocalDateTime.now();
         List<Coupon> list = lambdaQuery()
                 .eq(Coupon::getStatus, CouponStatus.ISSUING)
                 .eq(Coupon::getObtainWay, ObtainType.PUBLIC)
+                // 只按 status 过滤是不够的：状态由定时任务推进，任务没跑或被人为改过时，
+                // 未开始/已结束的券会顶着 ISSUING 留在这里，用户点「立即领取」才被 Lua 拦住
+                // （错误码 6「活动尚未开始」、3「优惠券已过期」）。这里补上时间判定，
+                // 让列表的可见性和 Lua 的准入判定用同一套规则。
+                // 时间字段允许为空，为空表示不限 —— 直接写 le/ge 会因 NULL 比较不成立而漏掉这些券
+                .and(w -> w.isNull(Coupon::getIssueBeginTime).or().le(Coupon::getIssueBeginTime, now))
+                .and(w -> w.isNull(Coupon::getIssueEndTime).or().ge(Coupon::getIssueEndTime, now))
                 .list();
         if (CollUtils.isEmpty(list)) return CollUtils.emptyList();
         List<Long> couponIds = list.stream().map(Coupon::getId).collect(Collectors.toList());
@@ -271,13 +246,25 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, Coupon> impleme
                 .filter(userCoupon -> userCoupon.getStatus() == UserCouponStatus.UNUSED)
                 .collect(Collectors.groupingBy(UserCoupon::getCouponId, Collectors.counting()));
         List<CouponVO> voList = new ArrayList<>(list.size());
+        // 限定了使用范围的券：一次查出分类id，前端据此展示「限 Java进阶、产品运营」。
+        // 不这么做的话，页面只能把所有限定券都写成「指定课程」，用户看不出能用在哪儿
+        List<Long> specificIds = list.stream()
+                .filter(c -> Boolean.TRUE.equals(c.getSpecific()))
+                .map(Coupon::getId)
+                .collect(Collectors.toList());
+        Map<Long, List<Long>> scopeMap = couponScopeService.mapCategoryIdsByCouponIds(specificIds);
         for (Coupon c : list) {
             CouponVO vo = BeanUtils.copyBean(c, CouponVO.class);
+            if (Boolean.TRUE.equals(c.getSpecific())) {
+                vo.setScopeCategoryIds(scopeMap.getOrDefault(c.getId(), Collections.emptyList()));
+            }
             // 限领额度必须按「累计领取数」算：已用掉的券也算领过，
             // 否则 userLimit=1 的券在用掉之后又能再领一张
+            // 三个字段都是包装类型，@Range 不拦 null，DB 里为空时直接比较会 NPE，
+            // 而 NPE 会让整个列表接口 500（一张脏数据打翻整页），这里按 0 兜底
             vo.setAvailable(
-                    c.getIssueNum() < c.getTotalNum()
-                            && totalMap.getOrDefault(c.getId(), 0L) < c.getUserLimit()
+                    NumberUtils.null2Zero(c.getIssueNum()) < NumberUtils.null2Zero(c.getTotalNum())
+                            && totalMap.getOrDefault(c.getId(), 0L) < NumberUtils.null2Zero(c.getUserLimit())
             );
             // 只有手里还有未使用的券，才引导用户「去使用」
             vo.setReceived(unusedMap.getOrDefault(c.getId(), 0L) > 0);

@@ -7,6 +7,7 @@ import com.zhiwei.api.dto.promotion.OrderCouponDTO;
 import com.zhiwei.common.domain.dto.PageDTO;
 import com.zhiwei.promotion.domian.query.UserCouponQuery;
 import com.zhiwei.promotion.domian.vo.CouponVO;
+import com.zhiwei.promotion.domian.vo.ExchangePreviewVO;
 import com.zhiwei.promotion.service.IDiscountService;
 import com.zhiwei.promotion.service.IUserCouponService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -43,6 +44,12 @@ public class UserCouponController {
     @PostMapping("/{code}/exchange")
     public void exchangeCoupon(@PathVariable("code") String code) {
         userCouponService.exchangeCoupon(code);
+    }
+
+    @Operation(summary = "兑换码预检：会换到什么券、能不能兑")
+    @GetMapping("/{code}/preview")
+    public ExchangePreviewVO previewExchange(@PathVariable("code") String code) {
+        return userCouponService.previewExchange(code);
     }
 
     @Operation(summary = "分页查询我的优惠券")

@@ -45,7 +45,11 @@ local _k2 = "prs:user:coupon:" .. cid
 local userLimit = tonumber(redis.call('HGET', _k1, 'userLimit') or "1")
 local curCount = tonumber(redis.call('HGET', _k2, ARGV[3]) or "0")
 if(curCount >= userLimit) then
-    return "5"
+    -- 带上上下文返回 "5|cid|已领张数|限额"：
+    -- 兑换码场景里用户不知道这张码换的是什么券，只回一个 "5" 的话，
+    -- 前端只能显示「超出领取数量」，用户既不知道在跟什么限额较劲，
+    -- 也会觉得「我拿的是有效码，凭什么不给我」。
+    return "5|" .. cid .. "|" .. curCount .. "|" .. userLimit
 end
 redis.call('HINCRBY', _k2, ARGV[3], 1)
 

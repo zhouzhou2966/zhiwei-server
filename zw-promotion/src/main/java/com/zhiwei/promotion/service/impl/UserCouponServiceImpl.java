@@ -24,6 +24,7 @@ import com.zhiwei.promotion.domian.po.ExchangeCode;
 import com.zhiwei.promotion.domian.po.UserCoupon;
 import com.zhiwei.promotion.domian.query.UserCouponQuery;
 import com.zhiwei.promotion.domian.vo.CouponVO;
+import com.zhiwei.promotion.domian.vo.ExchangePreviewVO;
 import com.zhiwei.promotion.enums.CouponStatus;
 import com.zhiwei.promotion.enums.ExchangeCodeStatus;
 import com.zhiwei.promotion.enums.ObtainType;
@@ -108,6 +109,13 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
      * 50ms 足够覆盖，同时不会让用户在领券页干等。</p>
      */
     private static final long REBUILD_WAIT_MS = 50L;
+
+    /**
+     * 兑换码反查券id 时在 ZSet 上取的序列号区间宽度。
+     * <p>兑换码的序列号是独立申请的，同一个券的码在 ZSet 里不一定连续，
+     * 所以取一个足够宽的窗口，命中第一条即可（与 exchange_coupon.lua 里的 5000 保持一致）。</p>
+     */
+    private static final long EXCHANGE_CODE_RANGE = 5000L;
 
     static {
         RECEIVE_COUPON_SCRIPT = RedisScript.of(new ClassPathResource("lua/receive_coupon.lua"), Long.class);
@@ -351,10 +359,18 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         // 1. 执行LUA脚本：防重检查 + ZSet反查 + 校验有效期/限领 + 原子标记
         //    返回结果：1~5为异常错误码，>10为couponId（优惠券ID）
         String result = redisTemplate.execute(EXCHANGE_COUPON_SCRIPT, List.of(COUPON_CODE_MAP_KEY, COUPON_CODE_RANGE_KEY),
-                String.valueOf(serialNum), String.valueOf(serialNum + 5000), userId.toString());
-        long r = NumberUtils.parseLong(result);
+                String.valueOf(serialNum), String.valueOf(serialNum + EXCHANGE_CODE_RANGE), userId.toString());
+        // Lua 可能返回两种形态：纯错误码 "5"，或者带上下文的 "5|cid|已领张数|限额"
+        String[] parts = result == null ? new String[0] : result.split("\\|");
+        long r = NumberUtils.parseLong(parts.length > 0 ? parts[0] : result);
         if (r < 10) {
-            // 返回错误码（1~5），取对应错误信息抛异常
+            // 错误码 5（超出领取数量）单独拼一句人话：
+            // 兑换码场景里用户手里只有一串码，不知道换的是什么券、也不知道自己的额度用在哪了。
+            // 只回「超出领取数量」，他会以为系统坏了 —— 这也是当初误判成「静默丢券」的原因之一。
+            if (r == 5 && parts.length >= 4) {
+                throw new BizIllegalException(buildOverLimitMessage(parts));
+            }
+            // 其余错误码（1~6），取对应错误信息抛异常
             throw new BizIllegalException(PromotionConstants.EXCHANGE_COUPON_ERROR_MSG[(int) (r - 1)]);
         }
         // 2. LUA执行成功，构建DTO并发送MQ异步落库
@@ -377,6 +393,115 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
             log.error("兑换码兑换异常，serialNum: {}, couponId: {}", serialNum, couponId, e);
             throw new BizIllegalException("兑换码兑换失败，请稍后重试");
         }
+    }
+
+    /**
+     * 把 Lua 返回的 {@code 5|cid|curCount|userLimit} 拼成一句用户能看懂的话。
+     * <p>「超出领取数量」这句话在兑换码场景里是不成立的：用户手里只有一串码，
+     * 既不知道换的是哪张券，也不知道自己的额度用在哪了。必须把券名和真实数量说出来。</p>
+     */
+    private String buildOverLimitMessage(String[] parts) {
+        Long limitCouponId = NumberUtils.parseLong(parts[1]);
+        int curCount = (int) NumberUtils.parseLong(parts[2]);
+        int userLimit = (int) NumberUtils.parseLong(parts[3]);
+        Coupon coupon = couponMapper.selectById(limitCouponId);
+        String name = coupon == null ? "该优惠券" : "「" + coupon.getName() + "」";
+        if (curCount >= userLimit) {
+            return String.format("这个兑换码换的是%s，每人限领 %d 张，您已经有 %d 张了，不能再兑",
+                    name, userLimit, curCount);
+        }
+        return String.format("这个兑换码换的是%s，暂时无法兑换", name);
+    }
+
+    /**
+     * 兑换码预检：告诉用户这张码会换到什么券、现在能不能兑。
+     *
+     * <p>兑换码是个盲盒 —— 用户手里只有一串码。不做预检的话，只能点了「兑换」再被一句
+     * 「超出领取数量」挡住，既不知道在跟什么限额较劲，也会觉得「有效码凭什么不给我」。
+     * 预检把券面和限制提前摆出来，翻卡的惊喜回到「翻开看到面额」这一件事上。</p>
+     *
+     * <p>只读：不写 Redis、不占名额、不动库存，所以随便查。</p>
+     */
+    @Override
+    public ExchangePreviewVO previewExchange(String code) {
+        // 1. 解析码。格式非法直接抛 400，前端提示「无效兑换码」
+        long serialNum = CodeUtil.parseCode(code);
+        ExchangePreviewVO vo = new ExchangePreviewVO();
+        vo.setValid(true);
+        vo.setUsed(false);
+        vo.setCanExchange(false);
+
+        // 2. 是否已被兑换。使用状态在 Redis 位图里，不在 exchange_code.status（那一列是启用/停用）
+        Boolean used = redisTemplate.opsForValue().getBit(COUPON_CODE_MAP_KEY, serialNum);
+        if (Boolean.TRUE.equals(used)) {
+            vo.setUsed(true);
+            vo.setReason("该兑换码已被使用");
+            return vo;
+        }
+
+        // 3. 反查券id，规则与 exchange_coupon.lua 完全一致
+        Set<String> cids = redisTemplate.opsForZSet()
+                .rangeByScore(COUPON_CODE_RANGE_KEY, serialNum, serialNum + EXCHANGE_CODE_RANGE);
+        if (CollUtils.isEmpty(cids)) {
+            vo.setReason("兑换码无效或已被回收");
+            return vo;
+        }
+        Long couponId = NumberUtils.parseLong(cids.iterator().next());
+
+        // 4. 券模板读 DB 而不是 Redis 缓存：预检要展示券名/面额/门槛，缓存里只有库存和限额；
+        //    预检是低频操作，一次 selectById 的代价可以忽略
+        Coupon coupon = couponMapper.selectById(couponId);
+        if (coupon == null) {
+            vo.setReason("兑换码对应的优惠券不存在");
+            return vo;
+        }
+        vo.setCouponId(couponId);
+        vo.setName(coupon.getName());
+        vo.setDiscountType(coupon.getDiscountType());
+        vo.setDiscountValue(coupon.getDiscountValue());
+        vo.setThresholdAmount(coupon.getThresholdAmount());
+        vo.setMaxDiscountAmount(coupon.getMaxDiscountAmount());
+        vo.setTermDays(coupon.getTermDays());
+
+        int userLimit = NumberUtils.null2Zero(coupon.getUserLimit());
+        if (userLimit <= 0) userLimit = 1;
+        vo.setUserLimit(userLimit);
+
+        // 5. 「已持有几张」按 DB 行数算，不按 Redis 计数：
+        //    「我的优惠券」里看到的就是 DB 行数（同款多张聚合成 ×N），
+        //    预检必须和列表对得上，否则用户会认为两边数据打架。
+        long owned = lambdaQuery()
+                .eq(UserCoupon::getUserId, UserContext.getUserId())
+                .eq(UserCoupon::getCouponId, couponId)
+                .count();
+        vo.setUserCount((int) owned);
+
+        // 6. 按 Lua 的校验顺序逐条给原因，先撞到哪条就说哪条
+        LocalDateTime now = LocalDateTime.now();
+        if (coupon.getStatus() != CouponStatus.ISSUING) {
+            vo.setReason("该优惠券已停止发放");
+            return vo;
+        }
+        if (coupon.getIssueBeginTime() != null && now.isBefore(coupon.getIssueBeginTime())) {
+            vo.setReason("兑换活动尚未开始");
+            return vo;
+        }
+        if (coupon.getIssueEndTime() != null && now.isAfter(coupon.getIssueEndTime())) {
+            vo.setReason("该兑换码已过期");
+            return vo;
+        }
+        if (NumberUtils.null2Zero(coupon.getIssueNum()) >= NumberUtils.null2Zero(coupon.getTotalNum())) {
+            vo.setReason("该优惠券已兑完");
+            return vo;
+        }
+        if (owned >= userLimit) {
+            vo.setReason(String.format("每人限领 %d 张，您已持有 %d 张", userLimit, owned));
+            return vo;
+        }
+
+        vo.setCanExchange(true);
+        vo.setReason(null);
+        return vo;
     }
 
     /**
