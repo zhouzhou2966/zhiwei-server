@@ -56,6 +56,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -117,11 +118,6 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
      */
     private static final long EXCHANGE_CODE_RANGE = 5000L;
 
-    /**
-     * 领券 Lua 的错误码 4：超出领取数量。
-     * <p>拿到它时不能直接抛异常，要先确认是真到限还是计数丢了（见 repairUserCounterIfMissing）。</p>
-     */
-    private static final int RECEIVE_LIMIT_REACHED = 4;
 
     static {
         RECEIVE_COUPON_SCRIPT = RedisScript.of(new ClassPathResource("lua/receive_coupon.lua"), Long.class);
@@ -150,10 +146,9 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         String key1 = COUPON_CACHE_KEY_PREFIX + couponId;
         String key2 = USER_COUPON_CACHE_KEY_PREFIX + couponId;
         // 1.2.执行脚本（命中「缓存不存在」时回源 DB 重建缓存再重试一次）
+        // 计数丢了不会报错，Lua 只会把 curCount 当成 0 —— 没有异常可挂钩，
+        // 事后也没法补救，所以重建必须发生在「券缓存重建」这一刻（见 restoreUserCountersIfMissing）
         int result = receiveWithCacheRepair(couponId, userId, key1, key2);
-        if (result == RECEIVE_LIMIT_REACHED) {
-            result = repairUserCounterIfMissing(couponId, userId, key1, key2);
-        }
         if (result != 0) {
             throw new BizIllegalException(PromotionConstants.RECEIVE_COUPON_ERROR_MSG[result - 1]);
         }
@@ -219,6 +214,8 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
                 return 1;
             }
             couponCacheManager.preheat(coupon);
+            // 券缓存和用户计数是同一次 flush 一起丢的，这里是唯一可靠的「顺手重建」时机
+            restoreUserCountersIfMissing(couponId);
             log.warn("[COUPON-REBUILD] 库存缓存缺失，已按 DB 重建：couponId={}, totalNum={}, issueNum={}",
                     couponId, coupon.getTotalNum(), coupon.getIssueNum());
         } catch (Exception e) {
@@ -237,36 +234,38 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
     }
 
     /**
-     * 错误码 4（超出领取数量）时的一次自愈尝试。
+     * 券缓存重建时，顺手把这张券的「用户领取计数」也按 DB 重建一次。
      *
-     * <p>用户领取计数在 {@code prs:user:coupon:{couponId}} 这个 hash 里，没有 TTL，
-     * 但 Redis 重启 / FLUSHDB 会把它整块丢掉。丢掉的后果不是报错而是「限额失效」：
-     * 计数归零后同一个人可以再领 userLimit 张。券缓存丢了还能靠错误码 1 回源重建，
-     * 用户计数一直没有对应的入口。</p>
+     * <p>为什么放在这里：{@code prs:user:coupon:{id}} 没有 TTL，只有 Redis 重启 / FLUSHDB
+     * 这类整块丢失才可能没。那种情况下 {@code prs:coupon:{id}} 一定也一起没了，
+     * 所以「券缓存缺失触发了 preheat」就是「用户计数也缺了」的可靠信号。</p>
      *
-     * <p><b>只在「这个用户的字段完全不存在」时补写</b>，字段存在但数值和 DB 不一致时不动：
-     * 那种差值通常来自「Lua 已 +1、MQ 还没落库」的在途窗口，按 DB 覆盖会让用户多领一张。
-     * 也就是说这里只修「整块丢了」，不修「正在飞的那一张」。</p>
+     * <p>为什么不能等报错再修：计数丢失后 Lua 读到的是 {@code curCount = 0}，校验只会通过、
+     * 不会返回「超出领取数量」—— 没有任何异常可以挂钩，用户会静默地多领 userLimit 张。</p>
+     *
+     * <p>重建是幂等的：只在 key 整体不存在时写。暂停后恢复只会删券缓存、保留用户计数
+     * （{@code evictCouponOnly}），那种情况这里必须跳过，否则会把用户已领的张数清零。</p>
      */
-    private int repairUserCounterIfMissing(Long couponId, Long userId, String key1, String key2) {
-        Object cached = redisTemplate.opsForHash().get(key2, userId.toString());
-        if (cached != null) {
-            // 计数还在，说明是真到限
-            return RECEIVE_LIMIT_REACHED;
+    private void restoreUserCountersIfMissing(Long couponId) {
+        String key = USER_COUPON_CACHE_KEY_PREFIX + couponId;
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(key))) return;
+        List<Map<String, Object>> rows = baseMapper.selectMaps(Wrappers.<UserCoupon>query()
+                .select("user_id AS userId", "COUNT(*) AS cnt")
+                .eq("coupon_id", couponId)
+                .groupBy("user_id"));
+        if (CollUtils.isEmpty(rows)) return;
+        Map<String, String> counts = new HashMap<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            Object uid = row.get("userId");
+            Object cnt = row.get("cnt");
+            if (uid != null && cnt != null) {
+                counts.put(String.valueOf(uid), String.valueOf(cnt));
+            }
         }
-        long owned = lambdaQuery()
-                .eq(UserCoupon::getUserId, userId)
-                .eq(UserCoupon::getCouponId, couponId)
-                .count();
-        if (owned <= 0) {
-            // DB 里也没有领取记录，那不是「丢了」而是配置或数据异常（例如 userLimit 配成 0），
-            // 保持原错误码，不要凭空造一个计数出来
-            return RECEIVE_LIMIT_REACHED;
-        }
-        redisTemplate.opsForHash().put(key2, userId.toString(), String.valueOf(owned));
-        log.warn("[COUPON-COUNTER-REPAIR] 用户领取计数缺失，已按 DB 重建：couponId={}, userId={}, count={}",
-                couponId, userId, owned);
-        return runReceiveScript(key1, key2, userId);
+        if (counts.isEmpty()) return;
+        redisTemplate.opsForHash().putAll(key, counts);
+        log.warn("[COUPON-COUNTER-REBUILD] 用户领取计数缺失，已按 DB 重建：couponId={}, users={}",
+                couponId, counts.size());
     }
 
     private void sleepQuietly(long millis) {
