@@ -262,11 +262,17 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, Coupon> impleme
             // 否则 userLimit=1 的券在用掉之后又能再领一张
             // 三个字段都是包装类型，@Range 不拦 null，DB 里为空时直接比较会 NPE，
             // 而 NPE 会让整个列表接口 500（一张脏数据打翻整页），这里按 0 兜底
-            vo.setAvailable(
-                    NumberUtils.null2Zero(c.getIssueNum()) < NumberUtils.null2Zero(c.getTotalNum())
-                            && totalMap.getOrDefault(c.getId(), 0L) < NumberUtils.null2Zero(c.getUserLimit())
-            );
-            // 只有手里还有未使用的券，才引导用户「去使用」
+            long owned = totalMap.getOrDefault(c.getId(), 0L);
+            int userLimit = NumberUtils.null2Zero(c.getUserLimit());
+            boolean soldOut = NumberUtils.null2Zero(c.getIssueNum()) >= NumberUtils.null2Zero(c.getTotalNum());
+            // 还能领几张：前端要据此显示「还可领 2 张」，光给一个 available 布尔值
+            // 会让 userLimit>1 的券在领到第一张后看着像「已经领过了」
+            long remain = Math.max(userLimit - owned, 0);
+            vo.setUserLimit(userLimit);
+            vo.setRemainCount((int) remain);
+            vo.setSoldOut(soldOut);
+            vo.setAvailable(!soldOut && remain > 0);
+            // 只有手里还有未使用的券，才引导用户「去使用」（和「还能不能再领」是两件事）
             vo.setReceived(unusedMap.getOrDefault(c.getId(), 0L) > 0);
             voList.add(vo);
         }

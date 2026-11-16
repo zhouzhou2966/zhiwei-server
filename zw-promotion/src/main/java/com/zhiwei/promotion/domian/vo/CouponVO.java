@@ -54,4 +54,13 @@ public class CouponVO {
 
     @Schema(description = "是否可以使用")
     private Boolean received;
+
+    @Schema(description = "每人限领数量，仅领券中心列表返回")
+    private Integer userLimit;
+
+    @Schema(description = "当前用户还能领几张（userLimit - 已领数量，最小 0），仅领券中心列表返回")
+    private Integer remainCount;
+
+    @Schema(description = "库存是否已发完（与个人额度无关），仅领券中心列表返回")
+    private Boolean soldOut;
 }

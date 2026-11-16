@@ -187,8 +187,10 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
      * <p>
      * 这里把错误码 1 拆成两种真实含义：DB 里确实不可领（返回 1，文案正确），
      * 或者只是缓存缺失（重建后重跑，用户无感）。DB 侧的
-     * {@code issue_num < total_num} 原子校验和 {@code user_coupon} 唯一索引仍然是
-     * 最终防线，所以重建不会造成超发。
+     * {@code issue_num < total_num} 原子校验（{@code increaseIssueNum}）仍然是超发的最终防线，
+     * 所以重建不会造成超发 —— 注意它挡的是「发得比库存多」，
+     * 「同一个人多领一张」由 Lua 的用户计数 + user_limit 负责，不再靠 user_coupon 的唯一索引
+     * （那个索引已随「一人可领多张」的需求移除）。
      * </p>
      */
     private int receiveWithCacheRepair(Long couponId, Long userId, String key1, String key2) {
