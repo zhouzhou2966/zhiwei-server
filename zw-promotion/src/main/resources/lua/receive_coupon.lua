@@ -24,6 +24,14 @@ if (obtainWay and tonumber(obtainWay) ~= 1) then
     return 5
 end
 
+-- 2.5 券必须处于「发放中」(status=3)。
+--     列表接口按 status 过滤了，但直接调接口可以绕过；暂停/待发放/已结束的券不该被领走。
+--     老缓存没有该字段时跳过。
+local status = redis.call('hget', KEYS[1], 'status')
+if (status and tonumber(status) ~= 3) then
+    return 7
+end
+
 -- 3. 是否已售罄
 if (tonumber(redis.call('hget', KEYS[1], 'totalNum') or "0") <= 0) then
     return 2

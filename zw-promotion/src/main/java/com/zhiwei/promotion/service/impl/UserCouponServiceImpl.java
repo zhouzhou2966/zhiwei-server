@@ -522,7 +522,7 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         // 6. 按 Lua 的校验顺序逐条给原因，先撞到哪条就说哪条
         LocalDateTime now = LocalDateTime.now();
         if (coupon.getStatus() != CouponStatus.ISSUING) {
-            vo.setReason("该优惠券已停止发放");
+            vo.setReason(describeCouponStatus(coupon.getStatus()));
             return vo;
         }
         if (coupon.getIssueBeginTime() != null && now.isBefore(coupon.getIssueBeginTime())) {
@@ -545,6 +545,26 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
         vo.setCanExchange(true);
         vo.setReason(null);
         return vo;
+    }
+
+    /**
+     * 券状态 → 给用户看的原因。
+     * <p>不能一律说「已停止发放」：待发放（DRAFT）的券根本没开始过，
+     * 说成「停止发放」会让运营以为配置错了、让用户以为活动结束了。</p>
+     */
+    private String describeCouponStatus(CouponStatus status) {
+        if (status == null) return "该优惠券当前不可兑换";
+        switch (status) {
+            case DRAFT:
+            case UN_ISSUE:
+                return "该优惠券尚未开始发放";
+            case PAUSE:
+                return "该优惠券已暂停发放";
+            case FINISHED:
+                return "该优惠券已结束发放";
+            default:
+                return "该优惠券当前不可兑换";
+        }
     }
 
     /**

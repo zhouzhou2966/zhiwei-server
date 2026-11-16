@@ -31,6 +31,15 @@ if(redis.call('EXISTS', _k1) == 0) then
     return "3"
 end
 
+-- 3.5 券必须处于「发放中」(status=3)。
+--     原来这里不校验状态：预检接口按 DB 的 status 拦住了「待发放/暂停/已结束」的券，
+--     但绕过前端直接调兑换接口照样能兑出去 —— 前后端两套判定，等于白拦。
+--     老缓存没有 status 字段时跳过，避免上线瞬间全部报错。
+local status = redis.call('HGET', _k1, 'status')
+if (status and tonumber(status) ~= 3) then
+    return "7"
+end
+
 -- 4. 校验有效期 (time[1]=秒, HGET存的issueEndTime=毫秒, 统一转为毫秒比较)
 local now = redis.call('time')
 local nowMs = tonumber(now[1]) * 1000 + tonumber(now[2]) / 1000

@@ -88,6 +88,10 @@ public class CouponCacheManager {
         map.put("totalNum", String.valueOf(remain));
         map.put("userLimit", String.valueOf(userLimit));
         map.put("obtainWay", String.valueOf(obtainWay));
+        // 状态也写进缓存：Lua 需要在脚本内原子地拒掉「待发放 / 暂停 / 已结束」的券。
+        // 只靠列表接口过滤是不够的，直接调领取/兑换接口能绕过。
+        map.put("status", String.valueOf(coupon.getStatus() == null
+                ? 0 : coupon.getStatus().getValue()));
 
         String key = COUPON_CACHE_KEY_PREFIX + coupon.getId();
         redisTemplate.opsForHash().putAll(key, map);
