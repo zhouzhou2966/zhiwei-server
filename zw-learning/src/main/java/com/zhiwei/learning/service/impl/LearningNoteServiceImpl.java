@@ -174,6 +174,17 @@ public class LearningNoteServiceImpl extends ServiceImpl<LearningNoteMapper, Lea
         Set<Long> userIds = records.stream().map(LearningNote::getUserId).collect(Collectors.toSet());
         List<UserDTO> userInfo = CollUtils.isEmpty(userIds) ? Collections.emptyList() : userClient.queryUserByIds(userIds);
         Map<Long, UserDTO> userMap = userInfo.stream().collect(Collectors.toMap(UserDTO::getId, u -> u, (v1, v2) -> v1));
+        // 课程名：courseId/sectionId 由 copyProperties 直接带过去，课程名要跨服务批量补一次
+        // （与 pageAdminPageQuery 的取法一致，都是 CourseClient.getSimpleInfoList）
+        Set<Long> courseIds = records.stream()
+                .map(LearningNote::getCourseId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        List<CourseSimpleInfoDTO> courseList = CollUtils.isEmpty(courseIds)
+                ? Collections.emptyList()
+                : courseClient.getSimpleInfoList(courseIds);
+        Map<Long, CourseSimpleInfoDTO> courseMap = courseList.stream()
+                .collect(Collectors.toMap(CourseSimpleInfoDTO::getId, c -> c, (v1, v2) -> v1));
         List<NotePageVO> voList = records.stream()
                 .map(
                         ln -> {
@@ -185,6 +196,10 @@ public class LearningNoteServiceImpl extends ServiceImpl<LearningNoteMapper, Lea
                                 vo.setAuthorId(user.getId());
                                 vo.setAuthorName(user.getName());
                                 vo.setAuthorIcon(user.getIcon());
+                            }
+                            CourseSimpleInfoDTO course = courseMap.get(ln.getCourseId());
+                            if (course != null) {
+                                vo.setCourseName(course.getName());
                             }
                             return vo;
                         })

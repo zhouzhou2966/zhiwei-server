@@ -18,6 +18,15 @@ public class NotePageVO {
     @Schema(description = "笔记记录时的视频时间点，单位秒")
     private Integer noteMoment;
 
+    @Schema(description = "课程id（学习中心笔记页回跳用）")
+    private Long courseId;
+
+    @Schema(description = "小节id（学习中心笔记页回跳用）")
+    private Long sectionId;
+
+    @Schema(description = "课程名称（列表展示用，分类服务批量补齐）")
+    private String courseName;
+
     @Schema(description = "是否是隐私笔记")
     private Boolean isPrivate;
 
