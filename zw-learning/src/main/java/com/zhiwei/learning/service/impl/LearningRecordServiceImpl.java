@@ -9,6 +9,7 @@ import com.zhiwei.common.constants.MqConstants;
 import com.zhiwei.common.exceptions.BizIllegalException;
 import com.zhiwei.common.exceptions.DbException;
 import com.zhiwei.common.utils.BeanUtils;
+import com.zhiwei.common.utils.CollUtils;
 import com.zhiwei.common.utils.UserContext;
 import com.zhiwei.learning.Utils.LearningRecordDelayTaskHandler;
 import com.zhiwei.learning.domian.dto.LearningRecordFormDTO;
@@ -16,15 +17,28 @@ import com.zhiwei.learning.domian.enums.LessonStatus;
 import com.zhiwei.learning.domian.enums.SectionType;
 import com.zhiwei.learning.domian.po.LearningLesson;
 import com.zhiwei.learning.domian.po.LearningRecord;
+import com.zhiwei.learning.domian.vo.LearningDailyStatVO;
+import com.zhiwei.learning.domian.vo.LearningSummaryVO;
 import com.zhiwei.learning.mapper.LearningRecordMapper;
 import com.zhiwei.learning.service.ILearningLessonService;
 import com.zhiwei.learning.service.ILearningRecordService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class LearningRecordServiceImpl extends ServiceImpl<LearningRecordMapper, LearningRecord> implements ILearningRecordService {
@@ -32,6 +46,8 @@ public class LearningRecordServiceImpl extends ServiceImpl<LearningRecordMapper,
     private final CourseClient courseClient;
     private final LearningRecordDelayTaskHandler taskHandler;
     private final RabbitMqHelper mqHelper;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
 
     /**
      * 查询用户在指定课程下的学习进度
@@ -268,5 +284,82 @@ public class LearningRecordServiceImpl extends ServiceImpl<LearningRecordMapper,
             throw new DbException("保存考试记录失败");
         }
         return true;
+    }
+
+    /**
+     * 学习活跃度按天聚合（概览页本周节奏、报告页热力图/指标卡）。
+     * <p>
+     * 口径约定：
+     * <ul>
+     *   <li>sections = 当日 DISTINCT section_id —— 同一天反复看同一小节只算一次；</li>
+     *   <li>totalSections = 区间内 DISTINCT section_id —— 跨天重复学习的同一小节也只算一次，
+     *       所以不能用「每日 sections 求和」代替（那会把跨天重复算成两次）；</li>
+     *   <li>activeDays = daily 里 sections &gt; 0 的天数（补 0 之后的 daily 长度恒等于 days，
+     *       不能直接拿长度当活跃天数）；</li>
+     *   <li>moment 是播放位置不是累计时长，这里不做任何时长统计。</li>
+     * </ul>
+     * 缓存 key 带「当天」，跨天自动失效；Redis 不可用时降级为直接查库。
+     */
+    @Override
+    public LearningSummaryVO learningSummary(Integer days) {
+        Long userId = UserContext.getUserId();
+        LearningSummaryVO vo = new LearningSummaryVO();
+        int d = (days == null || days <= 0) ? 30 : Math.min(days, 90);
+        vo.setDays(d);
+        vo.setTotalSections(0L);
+        vo.setActiveDays(0);
+        vo.setDaily(CollUtils.emptyList());
+        if (userId == null) {
+            return vo;
+        }
+
+        String todayKey = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String cacheKey = "ls:summary:" + userId + ":" + d + ":" + todayKey;
+        // 读缓存：命中直接返回。反序列化失败按未命中处理（缓存脏数据不致命）
+        try {
+            String json = redisTemplate.opsForValue().get(cacheKey);
+            if (json != null) {
+                return objectMapper.readValue(json, LearningSummaryVO.class);
+            }
+        } catch (Exception ignore) {
+        }
+
+        try {
+            LocalDateTime begin = LocalDate.now().minusDays(d - 1L).atStartOfDay();
+            Map<LocalDate, LearningDailyStatVO> statMap = baseMapper.selectDailyStats(userId, begin)
+                    .stream()
+                    .collect(Collectors.toMap(LearningDailyStatVO::getStatDate, s -> s));
+
+            // 缺失日期补 0：柱状图缺柱、热力图错位都是补全职责漏掉的症状，前端不补
+            List<LearningDailyStatVO> daily = new ArrayList<>(d);
+            LocalDate cur = LocalDate.now().minusDays(d - 1L);
+            for (int i = 0; i < d; i++) {
+                LearningDailyStatVO row = statMap.get(cur);
+                if (row == null) {
+                    row = new LearningDailyStatVO();
+                    row.setStatDate(cur);
+                    row.setSections(0L);
+                    row.setFinished(0L);
+                }
+                daily.add(row);
+                cur = cur.plusDays(1);
+            }
+            vo.setDaily(daily);
+            Long total = baseMapper.selectTotalSections(userId, begin);
+            vo.setTotalSections(total == null ? 0L : total);
+            vo.setActiveDays((int) daily.stream()
+                    .filter(s -> s.getSections() != null && s.getSections() > 0)
+                    .count());
+
+            try {
+                redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(vo), Duration.ofMinutes(5));
+            } catch (Exception ignore) {
+            }
+            return vo;
+        } catch (Exception e) {
+            // 统计是装饰性数据：查库失败返回空结构（0 值 + 空 daily），不把概览页打挂
+            log.warn("学习活跃度聚合失败 userId={} days={}", userId, d, e);
+            return vo;
+        }
     }
 }

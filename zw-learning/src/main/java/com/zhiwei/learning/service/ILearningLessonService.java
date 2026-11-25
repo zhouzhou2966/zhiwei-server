@@ -8,6 +8,7 @@ import com.zhiwei.learning.domian.po.LearningLesson;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.zhiwei.learning.domian.vo.LearningLessonVO;
 import com.zhiwei.learning.domian.vo.LearningPlanPageVO;
+import com.zhiwei.learning.domian.vo.LearningTodoVO;
 
 import jakarta.validation.Valid;
 import java.util.List;
@@ -56,5 +57,12 @@ public interface ILearningLessonService extends IService<LearningLesson> {
 
     // 更新已过期课程状态
     void updateExpiredLessonsStatus();
+
+    /**
+     * 学习概览页的待办 + 即将到期（GET /ls/lessons/todo）。
+     *
+     * @return 任何异常都返回空结构（planGap 归零、expiring 空列表），不抛出
+     */
+    LearningTodoVO learningTodo();
 
 }

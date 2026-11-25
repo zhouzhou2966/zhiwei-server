@@ -3,6 +3,7 @@ package com.zhiwei.learning.controller;
 
 import com.zhiwei.api.dto.leanring.LearningLessonDTO;
 import com.zhiwei.learning.domian.dto.LearningRecordFormDTO;
+import com.zhiwei.learning.domian.vo.LearningSummaryVO;
 import com.zhiwei.learning.service.ILearningLessonService;
 import com.zhiwei.learning.service.ILearningRecordService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,6 +39,14 @@ public class LearningRecordController {
     @Operation(summary = "提交学习记录")
     void addLearningRecord(@RequestBody LearningRecordFormDTO learningRecordFormDTO) {
         learningRecordService.addLearningRecord(learningRecordFormDTO);
+    }
+
+    @GetMapping("/summary")
+    @Operation(summary = "学习活跃度按天聚合（概览页本周节奏、报告页热力图）")
+    public LearningSummaryVO learningSummary(
+            @Parameter(description = "统计天数，1-90，默认 30", example = "7")
+            @RequestParam(value = "days", required = false) Integer days) {
+        return learningRecordService.learningSummary(days);
     }
 
 }

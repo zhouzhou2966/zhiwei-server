@@ -23,18 +23,24 @@ import com.zhiwei.learning.domian.po.LearningRecord;
 import com.zhiwei.learning.domian.vo.LearningLessonVO;
 import com.zhiwei.learning.domian.vo.LearningPlanPageVO;
 import com.zhiwei.learning.domian.vo.LearningPlanVO;
+import com.zhiwei.learning.domian.vo.LearningTodoVO;
 import com.zhiwei.learning.mapper.LearningLessonMapper;
 import com.zhiwei.learning.mapper.LearningRecordMapper;
 import com.zhiwei.learning.service.ILearningLessonService;
 import com.zhiwei.learning.service.IPointsRecordService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -57,6 +63,8 @@ public class LearningLessonServiceImpl extends ServiceImpl<LearningLessonMapper,
     private final LearningLessonMapper learningLessonMapper;
     private final IPointsRecordService pointsRecordService;
     private final CatalogueClient catalogueClient;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
 
 
     /**
@@ -511,5 +519,99 @@ public class LearningLessonServiceImpl extends ServiceImpl<LearningLessonMapper,
                 .lt(LearningLesson::getExpireTime, LocalDateTime.now()));
         log.info("定时任务执行了：更新了{}个已过期课程状态", updated);
 
+    }
+
+    /**
+     * 学习概览页的待办 + 即将到期。
+     * <p>
+     * 口径约定：
+     * <ul>
+     *   <li>planGap 复用 {@link #queryMyPlans} 的周口径（同一对周界 + 同一个 queryTotalPlan），
+     *       不另写一套统计 —— 否则概览页和「我的课程」页的数字会打架；</li>
+     *   <li>expiring 只取 status IN (0, 1)（未学习/学习中）—— 学完的课提醒续期是噪音，
+     *       还会占掉待办位置；</li>
+     *   <li>daysLeft 按自然日算（0 = 今天到期），前端把 0 显示成「今天到期」；</li>
+     *   <li>课程名走 CourseClient 批量取，不循环单查。</li>
+     * </ul>
+     * 整体 try/catch：任何异常都返回空结构 —— 这是装饰性接口，不能把概览页打挂。
+     * 缓存 key 带「当天」，跨天自动失效；Redis 不可用时降级为直接查库。
+     */
+    @Override
+    public LearningTodoVO learningTodo() {
+        LearningTodoVO vo = new LearningTodoVO();
+        vo.setPlanGap(new LearningTodoVO.PlanGap());
+        vo.getPlanGap().setWeekFinished(0);
+        vo.getPlanGap().setWeekTotalPlan(0);
+        vo.getPlanGap().setGap(0);
+        vo.setExpiring(CollUtils.emptyList());
+        Long userId = UserContext.getUserId();
+        if (userId == null) {
+            return vo;
+        }
+
+        String cacheKey = "ls:todo:" + userId + ":" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        try {
+            String json = redisTemplate.opsForValue().get(cacheKey);
+            if (json != null) {
+                return objectMapper.readValue(json, LearningTodoVO.class);
+            }
+        } catch (Exception ignore) {
+        }
+
+        try {
+            LocalDate now = LocalDate.now();
+            LocalDateTime beginTime = DateUtils.getWeekBeginTime(now);
+            LocalDateTime endTime = DateUtils.getWeekEndTime(now);
+            // 本周完成数：与 queryMyPlans 完全同一对周界、同一个 finished 口径
+            Long weekFinished = learningRecordMapper.selectCount(new LambdaQueryWrapper<LearningRecord>()
+                    .eq(LearningRecord::getUserId, userId)
+                    .eq(LearningRecord::getFinished, true)
+                    .between(LearningRecord::getFinishTime, beginTime, endTime));
+            int finished = weekFinished == null ? 0 : weekFinished.intValue();
+            Long totalPlan = learningLessonMapper.queryTotalPlan(userId);
+            int plan = totalPlan == null ? 0 : totalPlan.intValue();
+            vo.getPlanGap().setWeekFinished(finished);
+            vo.getPlanGap().setWeekTotalPlan(plan);
+            vo.getPlanGap().setGap(Math.max(0, plan - finished));
+
+            // 7 天内到期且未学完的课
+            List<LearningLesson> lessons = lambdaQuery()
+                    .eq(LearningLesson::getUserId, userId)
+                    .in(LearningLesson::getStatus, LessonStatus.NOT_BEGIN, LessonStatus.LEARNING)
+                    .isNotNull(LearningLesson::getExpireTime)
+                    .between(LearningLesson::getExpireTime, LocalDateTime.now(), LocalDateTime.now().plusDays(7))
+                    .orderByAsc(LearningLesson::getExpireTime)
+                    .last("LIMIT 5")
+                    .list();
+            List<LearningTodoVO.ExpiringCourse> expiring = new ArrayList<>();
+            if (CollUtils.isNotEmpty(lessons)) {
+                List<Long> cIds = lessons.stream().map(LearningLesson::getCourseId).collect(Collectors.toList());
+                Map<Long, CourseSimpleInfoDTO> cMap = new HashMap<>();
+                List<CourseSimpleInfoDTO> cInfoList = courseClient.getSimpleInfoList(cIds);
+                if (CollUtils.isNotEmpty(cInfoList)) {
+                    cMap = cInfoList.stream().collect(Collectors.toMap(CourseSimpleInfoDTO::getId, c -> c));
+                }
+                for (LearningLesson l : lessons) {
+                    LearningTodoVO.ExpiringCourse e = new LearningTodoVO.ExpiringCourse();
+                    e.setCourseId(l.getCourseId());
+                    CourseSimpleInfoDTO info = cMap.get(l.getCourseId());
+                    // 课程可能已被删除/逻辑删除：getSimpleInfoList 不返回它，名称兜底为空串，前端跳详情页再兜底
+                    e.setCourseName(info != null ? info.getName() : "");
+                    e.setExpireTime(l.getExpireTime());
+                    e.setDaysLeft(Math.max(0, (int) ChronoUnit.DAYS.between(LocalDate.now(), l.getExpireTime().toLocalDate())));
+                    expiring.add(e);
+                }
+            }
+            vo.setExpiring(expiring);
+
+            try {
+                redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(vo), Duration.ofMinutes(5));
+            } catch (Exception ignore) {
+            }
+            return vo;
+        } catch (Exception e) {
+            log.warn("学习待办聚合失败 userId={}", userId, e);
+            return vo;
+        }
     }
 }

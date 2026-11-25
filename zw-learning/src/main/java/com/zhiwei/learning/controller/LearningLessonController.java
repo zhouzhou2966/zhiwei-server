@@ -6,6 +6,7 @@ import com.zhiwei.common.domain.query.PageQuery;
 import com.zhiwei.learning.domian.dto.LearningPlanDTO;
 import com.zhiwei.learning.domian.vo.LearningLessonVO;
 import com.zhiwei.learning.domian.vo.LearningPlanPageVO;
+import com.zhiwei.learning.domian.vo.LearningTodoVO;
 import com.zhiwei.learning.service.ILearningLessonService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
@@ -76,6 +77,12 @@ public class LearningLessonController {
     @GetMapping("/plans")
     public LearningPlanPageVO queryMyPlans(PageQuery pageQuery) {
         return lessonService.queryMyPlans(pageQuery);
+    }
+
+    @GetMapping("/todo")
+    @Operation(summary = "学习概览页的待办 + 即将到期（任何异常返回空结构）")
+    public LearningTodoVO learningTodo() {
+        return lessonService.learningTodo();
     }
 
 }
