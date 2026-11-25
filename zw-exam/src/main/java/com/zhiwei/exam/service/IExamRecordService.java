@@ -9,6 +9,7 @@ import com.zhiwei.exam.domain.po.ExamRecord;
 import com.zhiwei.exam.domain.vo.ExamDetailVO;
 import com.zhiwei.exam.domain.vo.ExamRecordPageVO;
 import com.zhiwei.exam.domain.vo.ExamRecordVO;
+import com.zhiwei.exam.domain.vo.ExamStatsVO;
 
 import java.util.List;
 
@@ -56,4 +57,12 @@ public interface IExamRecordService extends IService<ExamRecord> {
      * @return 已交卷（status=1）的小节 id 列表
      */
     List<Long> queryFinishedSectionIds();
+
+    /**
+     * 我的考试 · 全量统计（次数 / 均分 / 最高分及日期 / 最近交卷日期）
+     * <p>列表分页之后，统计头只能由后端基于全量算，前端拿当前页凑数是错的。</p>
+     *
+     * @return 统计数据
+     */
+    ExamStatsVO queryExamStats();
 }

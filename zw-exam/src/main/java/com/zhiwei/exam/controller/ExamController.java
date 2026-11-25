@@ -7,6 +7,7 @@ import com.zhiwei.exam.domain.dto.ExamSubmitFormDTO;
 import com.zhiwei.exam.domain.vo.ExamDetailVO;
 import com.zhiwei.exam.domain.vo.ExamRecordPageVO;
 import com.zhiwei.exam.domain.vo.ExamRecordVO;
+import com.zhiwei.exam.domain.vo.ExamStatsVO;
 import com.zhiwei.exam.service.IExamRecordService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,6 +46,12 @@ public class ExamController {
     @GetMapping("/page")
     public PageDTO<ExamRecordPageVO> queryExamRecordPage(PageQuery pageQuery) {
         return examRecordService.queryExamRecordPage(pageQuery);
+    }
+
+    @Operation(summary = "我的考试 · 全量统计（次数 / 均分 / 最高分）")
+    @GetMapping("/stats")
+    public ExamStatsVO queryExamStats() {
+        return examRecordService.queryExamStats();
     }
 
     @Operation(summary = "查询当前用户已完成考试的小节id列表（课程目录打勾用）")

@@ -23,6 +23,7 @@ import com.zhiwei.exam.domain.po.QuestionDetail;
 import com.zhiwei.exam.domain.vo.ExamDetailVO;
 import com.zhiwei.exam.domain.vo.ExamRecordPageVO;
 import com.zhiwei.exam.domain.vo.ExamRecordVO;
+import com.zhiwei.exam.domain.vo.ExamStatsVO;
 import com.zhiwei.exam.domain.vo.QuestionDetailVO;
 import com.zhiwei.exam.mapper.ExamRecordMapper;
 import com.zhiwei.exam.service.IExamRecordAnswerService;
@@ -35,6 +36,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -65,6 +67,8 @@ public class ExamRecordServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRec
     private static final int STATUS_UNFINISHED = 0;
     /** 考试状态：已完成 */
     private static final int STATUS_FINISHED = 1;
+    /** 统计头里的日期只到「天」：10/22 这种足够，带上时分反而是噪音 */
+    private static final DateTimeFormatter DAY_FORMAT = DateTimeFormatter.ofPattern("M/d");
     /** 类型：练习 */
     private static final int TYPE_PRACTICE = 1;
     /** 类型：考试 */
@@ -396,5 +400,67 @@ public class ExamRecordServiceImpl extends ServiceImpl<ExamRecordMapper, ExamRec
                 .filter(Objects::nonNull)
                 .distinct()
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 我的考试 · 全量统计
+     * <p>
+     * 列表改后端分页后，统计头必须基于全部记录算 —— 前端拿当前页凑数会随翻页变化。
+     * 这里只 select 三列（score / finishTime / commitTime）走一次 list：
+     * 一个人的考试记录量级是几百到几千，比写三条聚合 SQL（count / avg / max，
+     * 再加一条「最高分那次是哪天」）更简单，也没有 N+1。
+     * </p>
+     */
+    @Override
+    public ExamStatsVO queryExamStats() {
+        Long userId = UserContext.getUserId();
+        ExamStatsVO vo = new ExamStatsVO();
+        if (userId == null) {
+            vo.setTotal(0L);
+            return vo;
+        }
+        List<ExamRecord> rows = lambdaQuery()
+                .select(ExamRecord::getScore, ExamRecord::getFinishTime, ExamRecord::getCreateTime)
+                .eq(ExamRecord::getUserId, userId)
+                .eq(ExamRecord::getStatus, STATUS_FINISHED)
+                .orderByDesc(ExamRecord::getCreateTime)
+                .list();
+        vo.setTotal((long) rows.size());
+        if (CollUtils.isEmpty(rows)) {
+            return vo;
+        }
+        // 最近一次：列表已按创建时间倒序，头一条就是
+        LocalDateTime last = timeOf(rows.get(0));
+        vo.setLastWhen(formatDay(last));
+
+        // 已判分的记录才参与均分 / 最高分（没交卷的 score 为 null）
+        List<ExamRecord> scored = rows.stream()
+                .filter(r -> r.getScore() != null)
+                .collect(Collectors.toList());
+        if (scored.isEmpty()) {
+            return vo;
+        }
+        double sum = scored.stream().mapToDouble(r -> r.getScore()).sum();
+        vo.setAvgScore(Math.round(sum / scored.size() * 10) / 10.0);
+
+        ExamRecord best = scored.get(0);
+        for (ExamRecord r : scored) {
+            // 同分取更近的一次（列表倒序，先遇到的就是最近的）
+            if (r.getScore() > best.getScore()) {
+                best = r;
+            }
+        }
+        vo.setMaxScore(best.getScore());
+        vo.setMaxWhen(formatDay(timeOf(best)));
+        return vo;
+    }
+
+    /** 交卷时间优先，没交卷时间就退回创建时间（PO 里没有 commitTime） */
+    private LocalDateTime timeOf(ExamRecord r) {
+        return r.getFinishTime() != null ? r.getFinishTime() : r.getCreateTime();
+    }
+
+    private String formatDay(LocalDateTime t) {
+        return t == null ? "" : t.format(DAY_FORMAT);
     }
 }
